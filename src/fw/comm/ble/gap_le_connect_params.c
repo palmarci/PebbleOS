@@ -127,8 +127,8 @@ static ResponseTimeState prv_classify_conn_interval(uint16_t conn_interval_1_25m
   return ResponseTimeInvalid;
 }
 
-static void prv_analytics_update_conn_params(uint16_t conn_interval_1_25ms,
-                                             uint16_t slave_latency_events) {
+void gap_le_connect_params_analytics_update_params(uint16_t conn_interval_1_25ms,
+                                                   uint16_t slave_latency_events) {
   prv_analytics_stop_conn_interval_timers();
 
   switch (prv_classify_conn_interval(conn_interval_1_25ms)) {
@@ -347,7 +347,8 @@ void bt_driver_handle_le_conn_params_update_event(const BleConnectionUpdateCompl
   const bool local_is_master = connection->local_is_master;
   if (!local_is_master) {
      bluetooth_analytics_handle_connection_params_update(params);
-     prv_analytics_update_conn_params(params->conn_interval_1_25ms, params->slave_latency_events);
+     gap_le_connect_params_analytics_update_params(params->conn_interval_1_25ms,
+                                                   params->slave_latency_events);
      PBL_ANALYTICS_ADD(ble_conn_param_update_count, 1);
   }
 
