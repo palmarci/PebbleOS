@@ -5,6 +5,24 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v54 (2026-08-24, **HW-VERIFIED same day**; `build/sake-spike-v54-rebase-v4.36.0.pbz`): **the
+  spike rebased from upstream v4.24.0 onto v4.36.0** — 79 commits replayed, no merge commit.
+  Motivated by the watchface refusing to install: the firmware accepts an app only when its
+  stamped SDK minor is `<= PROCESS_INFO_CURRENT_SDK_VERSION_MINOR`, our 4.24 base capped that at
+  `0x66`, and SDK 4.33.1 (installed 2026-08-22) stamps flint/emery/gabbro pbws `0x6a`. v4.33.1+
+  firmware raises the constant to `0x6a`, which is the fix.
+  Flashed and the pipeline works: pump reconnects, BG/IOB update, and the existing pump bond
+  survived the flash. Bond format is unchanged upstream (the v4.24→v4.36 diff in `nimble_store.c`
+  is log lines only), so no re-pair was needed and none was done — **the pairing-from-scratch path
+  is therefore still unverified on this base.**
+  Rebase mechanics, for the next one: only three conflicts exist in the whole series, and with
+  `rerere.enabled` each is answered once. Two are keep-both (`advert.c`, `init.c`); the real one is
+  `gap_le_connect_params.c`, where upstream renamed the analytics helper our spike had exported and
+  gave it a `slave_latency_events` arg — resolved by exporting upstream's two-arg version as
+  `gap_le_connect_params_analytics_update_params` and updating both call sites. One breakage git
+  merges silently and only the compiler catches: upstream moved `system/logging.h` to
+  `pbl/logging/logging.h` (its own commit here). Our `syscfg.h` BLE_SM overrides survive untouched.
+  Host tests 109/109. Carries v53 unchanged.
 - v53 (2026-08-22, BUILT, awaiting flash; `build/sake-spike-v53-alert-text.pbz`): notification
   text tweak only (no logic change from v52). Title = "MiniMed"; body = alert name with the BG
   in parens, e.g. "Alert before low (4.2)" ("LO"/"HI" for off-scale), or just the name when the

@@ -40,6 +40,12 @@ how to build and test, the code map, and what is left. Topic detail lives in its
   pump's display exactly. Feasibility fully settled; the rest is productization.
 - Reconnect **HW-VERIFIED 2026-07-22** (v16): after a NORMAL⇄SPIKE toggle the pump reconnected by
   itself, re-ran the handshake, BG resumed.
+- **Rebased onto upstream v4.36.0 (v54, HW-VERIFIED 2026-08-24).** The 4.24 base capped the
+  installable-app SDK version at `0x66`, so watchfaces built with SDK 4.33.1 (stamped `0x6a`)
+  were rejected with "This app requires a newer version of the Pebble firmware"; v4.33.1+ firmware
+  raises the constant. Pump pipeline and the existing bond came through the flash intact; pairing
+  from scratch is untested on this base. Rebase recipe (three conflicts, `rerere`, the silent
+  `logging.h` move) in the VERSIONS.md v54 entry.
 - **v49 BUILT 2026-08-17, awaiting flash** (`build/sake-spike-v49-iob-log.pbz`): logs raw IOB
   milliunits to the flash log on every SRCP read (previously UI-ring-log only, so dumps had no
   IOB values) — data for recovering the pump's insulin decay curve. Carries v48 unchanged;
