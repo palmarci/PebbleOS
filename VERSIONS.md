@@ -22,8 +22,14 @@ files are listed there.
   it — which is why nobody had reported it). Do not repeat the earlier "v4.33.1+" phrasing from this
   session: that was this entry's SDK-version gate below, a different upstream change. `native.c` is
   built for every non-PRF variant and `CONFIG_SERVICE_ANALYTICS=y` lives in `src/fw/prj.conf`, so by
-  reading it reboots any v4.36.0 watch hourly. Not confirmed against stock hardware — that check is
-  a stock v4.36.0 flash left running for an hour.
+  reading it reboots any v4.36.0 watch hourly. **Confirmed statically in upstream's own shipped
+  binary** (`firmware_asterix_v4.36.0.elf` from the GitHub release, nothing of ours in it): the
+  record is 567, the cap is 300, and `pbl_analytics__native_heartbeat` compiles to
+  `movs r3,#1` / `movw r2,#567` / `movs r0,#87` / `bl dls_create`, with
+  `bl passert_failed_hashed_no_message` at 0x77016 on the NULL path — so a release build asserts
+  too. Still unconfirmed as an observed reboot on stock hardware; that check is the official
+  `normal_asterix_v4.36.0.pbz` on the spare watch for an hour, expecting
+  `Dangerously rebooted due to Assert: LR 0x7701b`.
 - v54 (2026-08-24, **HW-VERIFIED same day**; `build/sake-spike-v54-rebase-v4.36.0.pbz`): **the
   spike rebased from upstream v4.24.0 onto v4.36.0** — 79 commits replayed, no merge commit.
   Motivated by the watchface refusing to install: the firmware accepts an app only when its
