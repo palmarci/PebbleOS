@@ -17,10 +17,13 @@ files are listed there.
   `:33:29`, no assert, `Compacting storage for session 68` confirming records reach flash. The
   broken generations are the two 58-59 min ones ending in
   `Dangerously rebooted due to Assert: LR 0x7492b`.
-  **This is an upstream bug, unfixed as of v4.36.0 and unreported by us**: `native.c` is built for
-  every non-PRF variant and `CONFIG_SERVICE_ANALYTICS=y` lives in `src/fw/prj.conf`, so by reading
-  it should reboot any v4.33.1+ watch hourly. Not confirmed against stock hardware — that check is
-  a stock flash left running for an hour.
+  **This is an upstream bug, unfixed and unreported by us.** `git tag --contains bebc13477` returns
+  v4.36.0 and nothing else, so **only v4.36.0 is affected** (tagged 2026-08-24, a day before we hit
+  it — which is why nobody had reported it). Do not repeat the earlier "v4.33.1+" phrasing from this
+  session: that was this entry's SDK-version gate below, a different upstream change. `native.c` is
+  built for every non-PRF variant and `CONFIG_SERVICE_ANALYTICS=y` lives in `src/fw/prj.conf`, so by
+  reading it reboots any v4.36.0 watch hourly. Not confirmed against stock hardware — that check is
+  a stock v4.36.0 flash left running for an hour.
 - v54 (2026-08-24, **HW-VERIFIED same day**; `build/sake-spike-v54-rebase-v4.36.0.pbz`): **the
   spike rebased from upstream v4.24.0 onto v4.36.0** — 79 commits replayed, no merge commit.
   Motivated by the watchface refusing to install: the firmware accepts an app only when its
