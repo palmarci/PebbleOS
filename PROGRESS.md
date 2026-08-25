@@ -46,6 +46,10 @@ how to build and test, the code map, and what is left. Topic detail lives in its
   raises the constant. Pump pipeline and the existing bond came through the flash intact; pairing
   from scratch is untested on this base. Rebase recipe (three conflicts, `rerere`, the silent
   `logging.h` move) in the VERSIONS.md v54 entry.
+  The base also carried one upstream regression: an hourly assert-reboot in the analytics
+  heartbeat, fixed in v55 (HW-verified overnight 2026-08-25, 7h37m uptime). It presented as
+  "SPIKE reverts to NORMAL after a while" because `s_mode` is RAM-only — worth remembering as a
+  diagnosis pattern: an unexplained mode revert means look for a reboot first.
 - **v49 BUILT 2026-08-17, awaiting flash** (`build/sake-spike-v49-iob-log.pbz`): logs raw IOB
   milliunits to the flash log on every SRCP read (previously UI-ring-log only, so dumps had no
   IOB values) — data for recovering the pump's insulin decay curve. Carries v48 unchanged;

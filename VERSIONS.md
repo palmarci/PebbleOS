@@ -5,6 +5,22 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v55 (2026-08-24, **HW-VERIFIED overnight 2026-08-25**;
+  `build/sake-spike-v55-heartbeat-assert-fix.pbz`): **fixes the hourly reboot v54 inherited from
+  upstream.** v54 asserted and reset an hour after every boot, which looked like "SPIKE falls back
+  to NORMAL after a while" only because `s_mode` is RAM-only. Upstream `bebc13477` had switched the
+  native analytics heartbeat to a buffered DLS session; buffered items are capped at 300 bytes and
+  `struct native_heartbeat_record` is 567, so `dls_create` returns NULL and `native.c`'s
+  `PBL_ASSERTN` reboots. The heartbeat timer is hourly and repeating, hence the clockwork. Reverted
+  to unbuffered (cap ~647, fits) — the pre-`bebc13477` behaviour.
+  Evidence: `../logs/watch/2026-08-25-g0-v55-batt75.txt` — 7h37m uptime, 7 heartbeats logged at
+  `:33:29`, no assert, `Compacting storage for session 68` confirming records reach flash. The
+  broken generations are the two 58-59 min ones ending in
+  `Dangerously rebooted due to Assert: LR 0x7492b`.
+  **This is an upstream bug, unfixed as of v4.36.0 and unreported by us**: `native.c` is built for
+  every non-PRF variant and `CONFIG_SERVICE_ANALYTICS=y` lives in `src/fw/prj.conf`, so by reading
+  it should reboot any v4.33.1+ watch hourly. Not confirmed against stock hardware — that check is
+  a stock flash left running for an hour.
 - v54 (2026-08-24, **HW-VERIFIED same day**; `build/sake-spike-v54-rebase-v4.36.0.pbz`): **the
   spike rebased from upstream v4.24.0 onto v4.36.0** — 79 commits replayed, no merge commit.
   Motivated by the watchface refusing to install: the firmware accepts an app only when its
