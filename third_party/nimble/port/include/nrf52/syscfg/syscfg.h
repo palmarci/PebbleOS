@@ -2096,8 +2096,12 @@
 
 /* Overridden by targets/nrf52 (defined by @apache-mynewt-nimble/nimble/host) */
 #ifndef MYNEWT_VAL_BLE_SM_LEGACY
+#ifdef CONFIG_MINIMED_SAKE_SPIKE
 /* MiniMed SAKE spike: pump only does legacy pairing, not LE Secure Connections. */
 #define MYNEWT_VAL_BLE_SM_LEGACY (1)
+#else
+#define MYNEWT_VAL_BLE_SM_LEGACY (0)
+#endif
 #endif
 
 /* Overridden by targets/nrf52 (defined by @apache-mynewt-nimble/nimble/host) */
@@ -2139,8 +2143,12 @@
 
 /* Overridden by targets/nrf52 (defined by @apache-mynewt-nimble/nimble/host) */
 #ifndef MYNEWT_VAL_BLE_SM_SC_ONLY
+#ifdef CONFIG_MINIMED_SAKE_SPIKE
 /* MiniMed SAKE spike: must accept the pump's legacy Just Works pairing. */
 #define MYNEWT_VAL_BLE_SM_SC_ONLY (0)
+#else
+#define MYNEWT_VAL_BLE_SM_SC_ONLY (1)
+#endif
 #endif
 
 /* Overridden by app (defined by @apache-mynewt-nimble/nimble/host) */
