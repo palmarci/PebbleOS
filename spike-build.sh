@@ -6,13 +6,14 @@
 #   ./spike-build.sh --configure <desc>  force a waf configure (after Kconfig/registry changes)
 #
 # Why this exists: the raw Docker one-liner is long, `./waf bundle` always emits the same
-# git-describe name (easy to grab a stale one), the versioned copy was manual, and getting the
-# file to the phone was a separate step. This does all four. See PROGRESS.md.
+# git-describe name (easy to grab a stale one), the single-slot bundle needs re-packing into
+# the app's dual-slot layout, and getting the file to the phone was a separate step. This does
+# all five. See PROGRESS.md.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 IMAGE=pebbleos-build:local
-BOARD=obelix                          # PT2 / Pebble Time 2 (SiFli)
+BOARD=obelix@pvt                      # PT2 / Pebble Time 2 (SiFli), production revision
 do_configure=0
 push=1
 desc=""
@@ -44,10 +45,14 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
     export PATH=/opt/pebbleos-sdk/arm-none-eabi/bin:\$PATH
     ${do_configure:+./waf configure --board $BOARD -DCONFIG_MINIMED_SAKE_SPIKE=y && }./waf build && ./waf bundle"
 
-# The freshly written bundle is the newest normal_<board>_*.pbz.
-fresh=$(ls -t build/normal_${BOARD}_*.pbz | head -1)
+# The freshly written bundle is the newest normal_<board normalized>_*.pbz
+# (BOARD_NORMALIZED strips the @revision, e.g. obelix@pvt -> obelix).
+fresh=$(ls -t build/normal_${BOARD//@/_}_*.pbz | head -1)
 out="build/sake-spike-v${next_ver}-${desc}.pbz"
-cp "$fresh" "$out"
+# The Pebble app sideloads dual-slot pbzs by the *alternate* slot (the app asks
+# for the slot not currently running), so a single-slot root-manifest bundle
+# fails with "No manifest for slot <n>". Repackage into the slot0/slot1 layout.
+python3 tools/make_dual_slot_pbz.py "$fresh" "$out"
 echo ">> $out"
 
 # Keep this build's loghash dictionary next to the .pbz. PBL_LOG lines are stored hashed, and the
