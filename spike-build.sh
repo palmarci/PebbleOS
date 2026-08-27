@@ -43,7 +43,7 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$PWD":/pebbleos -w /pebbleos "$IMAGE" bash -lc "
     git config --global --add safe.directory /pebbleos
     export PATH=/opt/pebbleos-sdk/arm-none-eabi/bin:\$PATH
-    ${do_configure:+./waf configure --board $BOARD -DCONFIG_MINIMED_SAKE_SPIKE=y && }./waf build && ./waf bundle"
+    ${do_configure:+./waf configure --board $BOARD -DCONFIG_RELEASE=y -DCONFIG_MINIMED_SAKE_SPIKE=y && }./waf build && ./waf bundle"
 
 # The freshly written bundle is the newest normal_<board normalized>_*.pbz
 # (BOARD_NORMALIZED strips the @revision, e.g. obelix@pvt -> obelix).
