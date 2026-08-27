@@ -93,10 +93,14 @@ vocabulary). Quick facts kept here:
 The spike now builds and boots on the Pebble Time 2 (`obelix@pvt`, SiFli SF32LB52). The working
 recipe is exacting; see `TESTING.md` for the full failure table. Essentials:
 
-- Build **release** (`CONFIG_RELEASE=y`), **single-slot slot0**, and share the **raw** bundle —
-  no dual-slot repack, no manifest rewrite.
+- Build **release** (`CONFIG_RELEASE=y`) and produce ONE correctly-linked single-slot bundle per
+  slot — no dual-slot repack, no manifest rewrite. `spike-build.sh` emits `_slot0.pbz` and
+  `_slot1.pbz` and shares both.
 - Keep a **release-form annotated git tag** (default `v4.36.9`) on HEAD so the manifest versionTag
   parses in the Pebble app and encodes as release band.
+- The app targets the slot NOT running (`1 - runningSlot`) and requires `firmware.slot` to match,
+  so flash whichever slot bundle the app asks for — the "does not parse" that appeared after a
+  working slot0 flash was this slot race, not a build regression.
 - Verify band 0x01 and version > stock (4.36.2) before flashing.
 
 ### After-the-fact logs from a SPIKE session (`tools/dump_flash_logs.py`)

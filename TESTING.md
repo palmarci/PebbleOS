@@ -17,21 +17,28 @@ The streamlined loop for iterating on the spike firmware. See `PROGRESS.md` for 
 
 ### The PT2 build recipe — read before deviating
 
-The only image that both **parses in the Pebble app** and **boots on the PT2** is a RAW
-**single-slot (slot0)** bundle built **release** (`CONFIG_RELEASE=y`) from a **release-form git
-tag**. `spike-build.sh` bakes exactly this. Every other combination has failed hard on the PT2:
+The only images that **parse in the Pebble app** AND **boot on the PT2** are RAW single-slot
+bundles built **release** (`CONFIG_RELEASE=y`) from a **release-form git tag** — one bundle per
+slot. `spike-build.sh` builds and shares both `_slot0.pbz` and `_slot1.pbz`.
+
+**Slot race (why a working file suddenly "does not parse"):** the app resolves a sideload to the
+slot *not* currently running (`updateToSlot = 1 - runningSlot`) and its safety check requires
+`firmware.slot == updateToSlot`. So a slot0-only pbz parses when the watch runs slot1, but once
+the watch boots that slot0 image it runs slot0 and the app demands slot1 — same file, now a parse
+error. Hence: keep both slot builds on the phone and flash the one the app asks for.
 
 | Variant | Symptom | Why |
 |---|---|---|
 | Non-release build (`CONFIG_RELEASE` dropped) | black screen, no splash | non-release paths hung the obelix boot/display |
-| Dual-slot repack (slot0+slot1 in one pbz) | black screen | duplicated-image repack broke boot |
+| Dual-slot repack (one pbz, slot0+slot1 dirs) | black screen | each slot shares a link layout; the repacked slot1 copy was the slot0-linked image, mislinked at slot1 |
 | Manifest `versionTag` rewrite | "did not parse" | manifest-only patch corrupts what the app expects |
 | Dev band (dirty/non-release git describe) | "did not parse" | app's version parser needs a release-form tag |
+| Single slot0-only build when watch runs slot0 | "did not parse" | app wants slot1 (slot race) — not a build fault |
 
-So: **do not repack, do not rewrite the manifest, do not run non-release, and keep a clean
-release-form tag.** `spike-build.sh` moves the annotated tag `SPIKE_TAG` (default `v4.36.9`) to
-HEAD each run, then verifies the bundle is release band 0x01 with version > stock (4.36.2) before
-sharing.
+So: **one correctly-linked bundle per slot, release build, release-form tag. Do not repack, do
+not rewrite the manifest, do not run non-release.** `spike-build.sh` moves the annotated tag
+`SPIKE_TAG` (default `v4.36.9`) to HEAD each run, builds slot0 and slot1 separately, verifies each
+is release band 0x01 with version > stock (4.36.2), and shares both over kdeconnect.
 
 ## Flash (BT sideload — no dev kit)
 
