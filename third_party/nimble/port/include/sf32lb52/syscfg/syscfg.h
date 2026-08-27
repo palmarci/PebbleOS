@@ -1152,9 +1152,12 @@
 #define MYNEWT_VAL_BLE_SM_KEYPRESS (0)
 #endif
 
-/* Overridden by targets/sf32lb52 (defined by @apache-mynewt-nimble/nimble/host) */
+/* MiniMed SAKE spike: allow the pump's legacy Just Works pairing (mirrors the nRF52 port).
+ * The pump does not support Secure Connections, so SC-only would reject its pairing
+ * request (ble_sm.c SM_SC_ONLY path -> auth failure, disconnect reason 0x05). The spike
+ * still enforces the phone's LESC/MITM at runtime for NORMAL mode. */
 #ifndef MYNEWT_VAL_BLE_SM_LEGACY
-#define MYNEWT_VAL_BLE_SM_LEGACY (0)
+#define MYNEWT_VAL_BLE_SM_LEGACY (1)
 #endif
 
 /* Overridden by targets/sf32lb52 (defined by @apache-mynewt-nimble/nimble/host) */
@@ -1189,9 +1192,9 @@
 #define MYNEWT_VAL_BLE_SM_SC_DEBUG_KEYS (0)
 #endif
 
-/* Overridden by targets/sf32lb52 (defined by @apache-mynewt-nimble/nimble/host) */
+/* MiniMed SAKE spike: not SC-only, so the pump's non-SC legacy pairing is accepted. */
 #ifndef MYNEWT_VAL_BLE_SM_SC_ONLY
-#define MYNEWT_VAL_BLE_SM_SC_ONLY (1)
+#define MYNEWT_VAL_BLE_SM_SC_ONLY (0)
 #endif
 
 /* Overridden by app (defined by @apache-mynewt-nimble/nimble/host) */
