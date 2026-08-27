@@ -59,8 +59,11 @@ CORE_CFG="-DCONFIG_RELEASE=y -DCONFIG_MINIMED_SAKE_SPIKE=y"
 build_slot() {
   local slot=$1
   local cfg=""
-  # Configure if forced, or if the existing cache is for a different slot/board.
-  if [ "$do_configure" = 1 ] || ! grep -q "FIRMWARE_SLOT = $slot" build/c4che/_cache.py 2>/dev/null; then
+  # Configure if forced, or if the existing cache lacks the spike/release config or targets a
+  # different slot. Guards against stale caches from a previous plain (non-spike) configure.
+  if [ "$do_configure" = 1 ] || ! grep -q "FIRMWARE_SLOT = $slot" build/c4che/_cache.py 2>/dev/null \
+     || ! grep -q "MINIMED_SAKE_SPIKE" build/c4che/_cache.py 2>/dev/null \
+     || ! grep -qE "CONFIG_RELEASE\s*=\s*(1|True)" build/c4che/_cache.py 2>/dev/null; then
     cfg="true"
   fi
   echo ">> building slot$slot (v$next_ver-$desc)${cfg:+ [configure]}..."
