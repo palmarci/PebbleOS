@@ -6,9 +6,8 @@
 #   ./spike-build.sh --configure <desc>  force a waf configure (after Kconfig/registry changes)
 #
 # Why this exists: the raw Docker one-liner is long, `./waf bundle` always emits the same
-# git-describe name (easy to grab a stale one), the single-slot bundle needs re-packing into
-# the app's dual-slot layout, and getting the file to the phone was a separate step. This does
-# all five. See PROGRESS.md.
+# git-describe name (easy to grab a stale one), and getting the file to the phone was a
+# separate step. This does all of it. See PROGRESS.md.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -47,27 +46,50 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 
 # The freshly written bundle is the newest normal_<board normalized>_*.pbz
 # (BOARD_NORMALIZED strips the @revision, e.g. obelix@pvt -> obelix).
+# Share this raw single-slot bundle as-is: a dual-slot repack black-screened
+# the watch, while the plain slot0 bundle sideloads and boots.
 fresh=$(ls -t build/normal_${BOARD//@/_}_*.pbz | head -1)
 out="build/sake-spike-v${next_ver}-${desc}.pbz"
-# The Pebble app sideloads dual-slot pbzs by the *alternate* slot (the app asks
-# for the slot not currently running), so a single-slot root-manifest bundle
-# fails with "No manifest for slot <n>". Repackage into the slot0/slot1 layout.
-python3 tools/make_dual_slot_pbz.py "$fresh" "$out"
+cp "$fresh" "$out"
 echo ">> $out"
 
+# The bin's pblboot band (dev 0x80) and the manifest's versionTag are independent.
+# Dev channel needs a non-release-form git describe (band 0x80, always boots over stock),
+# but the Pebble app only parses a release-form versionTag (vX.Y.Z / -beta / -rc). So:
+# keep the binary dev-band, and rewrite the manifest versionTag to a parseable value
+# the app accepts for sideload. This is a manifest-only patch, not the dual-slot repack
+# that black-screened the watch.
+python3 - "$out" <<'PYEOF'
+import json, sys, zipfile, tempfile, os
+out = sys.argv[1]
+tmp = out + ".tmp"
+with zipfile.ZipFile(out, "r") as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "manifest.json":
+            m = json.loads(data)
+            m["firmware"]["versionTag"] = "v9.9.9"
+            data = json.dumps(m).encode()
+        zout.writestr(item, data)
+os.replace(tmp, out)
+print(">> manifest versionTag set to v9.9.9 (app-parseable); bin band kept")
+PYEOF
+
 # The pblboot priority header (u64 at bytes 8..15) decides which slot boots.
-# A dev band (0x80) always beats any release band (0x01), so the spike builds
-# must stay on the dev band or a stock image in the other slot could win.
-# Dev can silently flip to release if HEAD gets a plain vX[.Y[.Z]] (or -beta/-rc) tag,
-# because pblboot.py only treats exact release tags as release-band. Fail loudly.
-band_hex=$(python3 -c "
+# Bands order dev (0x80) > release (0x01). Enforce dev band: the whole point is a dev
+# build that boots over any release image in the alternate slot.
+band_info=$(python3 -c "
 import zipfile
-fw = zipfile.ZipFile('$out').read('slot0/tintin_fw.bin')
-print(hex((int.from_bytes(fw[8:16], 'little') >> 56) & 0xff))
+fw = zipfile.ZipFile('$out').read('pebbleos.bin')
+prio = int.from_bytes(fw[8:16], 'little')
+band = (prio >> 56) & 0xff
+maj, mn, pat = (prio >> 48) & 0xff, (prio >> 40) & 0xff, (prio >> 32) & 0xff
+print(f'{band:02x} {maj} {mn} {pat}')
 ")
-if [ "$band_hex" != "0x80" ]; then
-  echo ">> ERROR: pblboot boot-priority band is $band_hex, not dev (0x80). Refusing to ship."
-  echo ">> HEAD got a release-form tag (vX[.Y[.Z]][-beta/rcN])? pblboot.py treats those as release band."
+read band_hex maj min pat <<<"$band_info"
+if [ "$band_hex" != "80" ]; then
+  echo ">> ERROR: spike binary is NOT dev band (got $band_hex, want 0x80)."
+  echo ">> HEAD got a release-form tag; remove it (git tag -d) so the build stays dev."
   exit 1
 fi
 echo ">> pblboot boot-priority band: dev (0x80)"
