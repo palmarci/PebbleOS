@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 # One-shot build/version/deploy for the MiniMed SAKE spike firmware.
 #
-#   ./spike-build.sh <desc>          build + bundle + share to the phone over kdeconnect.
-#   ./spike-build.sh <desc> --no-push    skip the share (just build the versioned .pbz)
+#   ./spike-build.sh <desc>          build slot0+slot1 bundles + share both to the phone.
+#   ./spike-build.sh <desc> --no-push    skip the share (just build the versioned .pbz files)
 #   ./spike-build.sh --configure <desc>  force a waf configure (after Kconfig/registry changes)
 #
 # What this produces and why (see PROGRESS.md "PT2 port" for the full post-mortem):
 #   - Release build  (CONFIG_RELEASE=y). The very first black-screens were caused by this flag
 #     being silently dropped, making non-release builds that hung the obelix display/boot path.
-#   - Single-slot slot0, RAW bundle. Do NOT dual-slot repack and do NOT rewrite the manifest:
-#     the official single-slot bundle is what the app parses and the watch boots. The repack that
-#     duplicated slot0/1 under one pbz black-screened, and manifest-only versionTag rewriting
-#     produced "did not parse" failures.
+#   - Separate, correctly-linked slot0 AND slot1 bundles. The Pebble app resolves a sideload to
+#     the slot NOT currently running (updateToSlot = 1 - runningSlot) and its safety check requires
+#     firmware.slot == updateToSlot, so a single slot0-only pbz "does not parse" whenever the watch
+#     is running slot0. Building each slot as its OWN single-bundle pbz gives a file the app always
+#     accepts. Do NOT dual-slot repack: the earlier repack baked the SAME slot0-linked image into
+#     both slots, and the mislinked slot1 copy black-screened.
 #   - Release band (0x01) with a release-form version, so it boots over the current stock
 #     (4.36.2). A plain annotated git tag like v4.36.9 gives the app a parseable versionTag.
 #     Dev band (0x80) is NOT used: a dev-form git describe breaks the app's manifest parse.
-#
-# This bakes a clean annotated release tag (v4.36.9 by default) if none is present, because
-# git describe must resolve to a release-form tag for the bundle's versionTag to parse.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 IMAGE=ghcr.io/coredevices/pebbleos-docker:v6   # official CI image, not the local commit
 BOARD=obelix@pvt                              # PT2 / Pebble Time 2 (SiFli), production revision
+BOARD_NORM=${BOARD//@/_}                      # obelix_pvt (BOARD_NORMALIZED strips @revision)
 SPIKE_TAG=${SPIKE_TAG:-v4.36.9}               # release-form tag stamped into the bundle
 do_configure=0
 push=1
@@ -40,7 +40,6 @@ done
 # Ensure a release-form annotated tag exists on HEAD so `git describe` in the build resolves to
 # something the Pebble app parses (vX.Y.Z / -beta / -rc) AND that encodes as release band.
 # If SPIKE_TAG exists on an older commit, move it to HEAD (the bundle carries the HEAD build).
-# This makes the recipe idempotent across new commits: re-running re-tags HEAD.
 git tag -f -a "$SPIKE_TAG" -m "spike pt2 build" HEAD >/dev/null 2>&1
 git describe --dirty
 
@@ -55,48 +54,60 @@ fi
 next_ver=$(( $(ls build/sake-spike-v*.pbz 2>/dev/null \
   | sed -n 's#.*/sake-spike-v\([0-9]\{1,\}\)-.*#\1#p' | sort -n | tail -1 | grep -E '^[0-9]+$' || echo 0) + 1 ))
 
-echo ">> building (v$next_ver-$desc)${do_configure:+ [configure]}..."
-docker run --rm -e HOME=/tmp \
-  -v "$PWD":/pebbleos -w /pebbleos "$IMAGE" bash -lc "
-    git config --global --add safe.directory /pebbleos
-    pip install -U pip >/dev/null 2>&1
-    pip install -r requirements.txt >/dev/null 2>&1
-    export PATH=/opt/pebbleos-sdk/arm-none-eabi/bin:\$PATH
-    ${do_configure:+./waf configure --board $BOARD -DCONFIG_FIRMWARE_SLOT=0 -DCONFIG_RELEASE=y -DCONFIG_MINIMED_SAKE_SPIKE=y && }./waf build && ./waf bundle"
+CORE_CFG="-DCONFIG_RELEASE=y -DCONFIG_MINIMED_SAKE_SPIKE=y"
 
-# The freshly written bundle is the newest normal_<board normalized>_*.pbz
-# (BOARD_NORMALIZED strips the @revision, e.g. obelix@pvt -> obelix).
-# Share this RAW single-slot bundle as-is.
-fresh=$(ls -t build/normal_${BOARD//@/_}_*.pbz | head -1)
-out="build/sake-spike-v${next_ver}-${desc}.pbz"
-cp "$fresh" "$out"
-echo ">> $out"
+build_slot() {
+  local slot=$1
+  local cfg=""
+  # Configure if forced, or if the existing cache is for a different slot/board.
+  if [ "$do_configure" = 1 ] || ! grep -q "FIRMWARE_SLOT = $slot" build/c4che/_cache.py 2>/dev/null; then
+    cfg="true"
+  fi
+  echo ">> building slot$slot (v$next_ver-$desc)${cfg:+ [configure]}..."
+  docker run --rm -e HOME=/tmp \
+    -v "$PWD":/pebbleos -w /pebbleos "$IMAGE" bash -lc "
+      git config --global --add safe.directory /pebbleos
+      pip install -U pip >/dev/null 2>&1
+      pip install -r requirements.txt >/dev/null 2>&1
+      export PATH=/opt/pebbleos-sdk/arm-none-eabi/bin:\$PATH
+      ${cfg:+./waf configure --board $BOARD -DCONFIG_FIRMWARE_SLOT=$slot $CORE_CFG && }./waf build && ./waf bundle"
+}
 
-# Sanity: versionTag must be release-form (else the app rejects), and band must be release
-# (0x01) with version > stock (4.36.2) so it boots over the alternate slot. Dev band (0x80)
-# would not be parseable, so we explicitly want release here.
-version_tag=$(unzip -p "$out" manifest.json | python3 -c "import json,sys; print(json.load(sys.stdin)['firmware']['versionTag'])")
-band_info=$(python3 -c "
+verify_bundle() {
+  local out=$1
+  local version_tag band_hex maj min pat
+  version_tag=$(unzip -p "$out" manifest.json | python3 -c "import json,sys; print(json.load(sys.stdin)['firmware']['versionTag'])")
+  read band_hex maj min pat <<<"$(python3 -c "
 import zipfile
 fw = zipfile.ZipFile('$out').read('pebbleos.bin')
 prio = int.from_bytes(fw[8:16], 'little')
-band = (prio >> 56) & 0xff
-maj, mn, pat = (prio >> 48) & 0xff, (prio >> 40) & 0xff, (prio >> 32) & 0xff
-print(f'{band:02x} {maj} {mn} {pat}')
-")
-read band_hex maj min pat <<<"$band_info"
-echo ">> versionTag=$version_tag band=$band_hex v$maj.$min.$pat"
-if [ "$band_hex" != "01" ]; then
-  echo ">> ERROR: expected release band 0x01, got $band_hex. Remove the dev/dirty tag so version resolves to a release form."
-  exit 1
-fi
-if [ "$maj" -lt 4 ] || { [ "$maj" -eq 4 ] && [ "$min" -lt 36 ]; }; then
-  echo ">> ERROR: version v$maj.$min.$pat would NOT boot over stock v4.36.2"
-  exit 1
-fi
-echo ">> pblboot: release band, v$maj.$min.$pat (boots over stock v4.36.2), versionTag=$version_tag"
+print(f'{(prio>>56)&0xff:02x} {(prio>>48)&0xff} {(prio>>40)&0xff} {(prio>>32)&0xff}')
+")"
+  echo ">> $out: versionTag=$version_tag band=$band_hex v$maj.$min.$pat"
+  if [ "$band_hex" != "01" ]; then
+    echo ">> ERROR: expected release band 0x01, got $band_hex."
+    exit 1
+  fi
+  if [ "$maj" -lt 4 ] || { [ "$maj" -eq 4 ] && [ "$min" -lt 36 ]; }; then
+    echo ">> ERROR: version v$maj.$min.$pat would NOT boot over stock v4.36.2"
+    exit 1
+  fi
+}
 
-# Keep this build's loghash dictionary next to the .pbz.
+out_slot0="build/sake-spike-v${next_ver}-${desc}_slot0.pbz"
+out_slot1="build/sake-spike-v${next_ver}-${desc}_slot1.pbz"
+
+build_slot 0
+fresh=$(ls -t build/normal_${BOARD_NORM}_*slot0.pbz | head -1)
+cp "$fresh" "$out_slot0"
+verify_bundle "$out_slot0"
+
+build_slot 1
+fresh=$(ls -t build/normal_${BOARD_NORM}_*slot1.pbz | head -1)
+cp "$fresh" "$out_slot1"
+verify_bundle "$out_slot1"
+
+# Keep this build's loghash dictionary next to the .pbz. (SAME dict for both slots.)
 if [ -f build/pebbleos_loghash_dict.json ]; then
   cp build/pebbleos_loghash_dict.json "build/sake-spike-v${next_ver}-${desc}.loghash.json"
 fi
@@ -104,8 +115,11 @@ fi
 if [ "$push" = 1 ]; then
   device=$(kdeconnect-cli -a --id-only 2>/dev/null | head -1)
   if [ -n "$device" ]; then
-    kdeconnect-cli -d "$device" --share "$out" >/dev/null && \
-      echo ">> shared to phone: $(basename "$out")"
+    kdeconnect-cli -d "$device" --share "$out_slot0" >/dev/null && \
+      echo ">> shared to phone: $(basename "$out_slot0")"
+    kdeconnect-cli -d "$device" --share "$out_slot1" >/dev/null && \
+      echo ">> shared to phone: $(basename "$out_slot1")"
+    echo ">> Flash the one whose slot the app wants (watch runs <n> -> app wants 1-<n>)."
   else
     echo ">> skip share: no reachable kdeconnect device (use --no-push to silence)"
   fi
