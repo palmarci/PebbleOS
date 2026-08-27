@@ -55,6 +55,23 @@ out="build/sake-spike-v${next_ver}-${desc}.pbz"
 python3 tools/make_dual_slot_pbz.py "$fresh" "$out"
 echo ">> $out"
 
+# The pblboot priority header (u64 at bytes 8..15) decides which slot boots.
+# A dev band (0x80) always beats any release band (0x01), so the spike builds
+# must stay on the dev band or a stock image in the other slot could win.
+# Dev can silently flip to release if HEAD gets a plain vX[.Y[.Z]] (or -beta/-rc) tag,
+# because pblboot.py only treats exact release tags as release-band. Fail loudly.
+band_hex=$(python3 -c "
+import zipfile
+fw = zipfile.ZipFile('$out').read('slot0/tintin_fw.bin')
+print(hex((int.from_bytes(fw[8:16], 'little') >> 56) & 0xff))
+")
+if [ "$band_hex" != "0x80" ]; then
+  echo ">> ERROR: pblboot boot-priority band is $band_hex, not dev (0x80). Refusing to ship."
+  echo ">> HEAD got a release-form tag (vX[.Y[.Z]][-beta/rcN])? pblboot.py treats those as release band."
+  exit 1
+fi
+echo ">> pblboot boot-priority band: dev (0x80)"
+
 # Keep this build's loghash dictionary next to the .pbz. PBL_LOG lines are stored hashed, and the
 # hashes change between builds -- so without the matching dict, tools/dump_flash_logs.py cannot
 # read back a log written by an older firmware. Costs a few hundred KB per flash.
