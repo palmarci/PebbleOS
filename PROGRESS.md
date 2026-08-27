@@ -82,11 +82,22 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 BT sideload steps; pump + watchface test procedures; the FE81/FE82 reconciliation fix; log
 vocabulary). Quick facts kept here:
 
-- No local toolchain; build in Docker image **`pebbleos-build:local`** (recreate per "How to build"
-  below if gone). `spike-build.sh` wraps the whole Docker invocation.
+- No local toolchain; build in Docker image **`ghcr.io/coredevices/pebbleos-docker:v6`** (official CI
+  image, not the old `pebbleos-build:local`). `spike-build.sh` wraps the whole Docker invocation.
 - Everything is behind Kconfig `CONFIG_MINIMED_SAKE_SPIKE`; boots NORMAL (ordinary Pebble).
   "SAKE Spike" app: SELECT = NORMAL⇄SPIKE, DOWN = forget pump, Back = exit.
 - Crypto changes: run `tools/minimed_sake_hosttest/` (`make run`, 24/24) before reflashing.
+
+### PT2 (obelix) port — verified build recipe
+
+The spike now builds and boots on the Pebble Time 2 (`obelix@pvt`, SiFli SF32LB52). The working
+recipe is exacting; see `TESTING.md` for the full failure table. Essentials:
+
+- Build **release** (`CONFIG_RELEASE=y`), **single-slot slot0**, and share the **raw** bundle —
+  no dual-slot repack, no manifest rewrite.
+- Keep a **release-form annotated git tag** (default `v4.36.9`) on HEAD so the manifest versionTag
+  parses in the Pebble app and encodes as release band.
+- Verify band 0x01 and version > stock (4.36.2) before flashing.
 
 ### After-the-fact logs from a SPIKE session (`tools/dump_flash_logs.py`)
 
@@ -140,11 +151,11 @@ DB, so bond-storage work can be genuine TDD with no hardware. Run it in Docker l
 - `./waf test` uses the `test` waf **variant** (`build/test/`), so it does *not* clobber the
   firmware build and is fine to run with the asterix configure in place. First run ~2 min.
 
-### How to build (recreate the image if `pebbleos-build:local` is gone)
+### How to build (Docker)
 
-`ghcr.io/coredevices/pebbleos-docker:v6` + `pip install -r requirements.txt`, then `docker commit`.
-Submodules must be checked out (skip the huge `third_party/hal_sifli/SiFli-SDK`, obelix-only;
-`resources/iconography` is required or the resource build dies).
+`ghcr.io/coredevices/pebbleos-docker:v6` is the official CI image; it installs deps itself
+(`pip install -r requirements.txt`) inside each container run, so no `docker commit` is needed.
+Submodules must be checked out (`resources/iconography` is required or the resource build dies).
 
 
 ## Code map (branch `spike/minimed-sake`; all committed, nothing pushed)

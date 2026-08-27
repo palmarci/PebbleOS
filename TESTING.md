@@ -6,14 +6,32 @@ The streamlined loop for iterating on the spike firmware. See `PROGRESS.md` for 
 ## Build + deploy (one command)
 
 ```sh
-./spike-build.sh <desc>              # build + bundle -> build/sake-spike-vN-<desc>.pbz, adb-push to phone
-./spike-build.sh <desc> --no-push    # skip the adb push
+./spike-build.sh <desc>              # build + bundle -> build/sake-spike-vN-<desc>.pbz, share to phone
+./spike-build.sh <desc> --no-push    # skip the share (just build the versioned .pbz)
 ./spike-build.sh <desc> --configure  # add this after Kconfig / app-registry changes
 ```
 
 - Auto-increments the version number and writes `build/sake-spike-vN-<desc>.pbz`.
-- Pushes to the phone's `/sdcard/Download/` over adb (phone must be USB-connected; one device).
-- The Docker image `pebbleos-build:local` must exist (see PROGRESS.md "How to build" if it's gone).
+- Shares to the phone over **kdeconnect** (`kdeconnect-cli --share`) — no USB/adb needed.
+- Builds in Docker image **`ghcr.io/coredevices/pebbleos-docker:v6`** (official CI image).
+
+### The PT2 build recipe — read before deviating
+
+The only image that both **parses in the Pebble app** and **boots on the PT2** is a RAW
+**single-slot (slot0)** bundle built **release** (`CONFIG_RELEASE=y`) from a **release-form git
+tag**. `spike-build.sh` bakes exactly this. Every other combination has failed hard on the PT2:
+
+| Variant | Symptom | Why |
+|---|---|---|
+| Non-release build (`CONFIG_RELEASE` dropped) | black screen, no splash | non-release paths hung the obelix boot/display |
+| Dual-slot repack (slot0+slot1 in one pbz) | black screen | duplicated-image repack broke boot |
+| Manifest `versionTag` rewrite | "did not parse" | manifest-only patch corrupts what the app expects |
+| Dev band (dirty/non-release git describe) | "did not parse" | app's version parser needs a release-form tag |
+
+So: **do not repack, do not rewrite the manifest, do not run non-release, and keep a clean
+release-form tag.** `spike-build.sh` moves the annotated tag `SPIKE_TAG` (default `v4.36.9`) to
+HEAD each run, then verifies the bundle is release band 0x01 with version > stock (4.36.2) before
+sharing.
 
 ## Flash (BT sideload — no dev kit)
 
