@@ -37,13 +37,11 @@ for arg in "$@"; do
 done
 [ -n "$desc" ] || { echo "usage: $0 <desc> [--configure] [--no-push]" >&2; exit 2; }
 
-# Ensure a release-form annotated tag exists so `git describe` in the build resolves to
+# Ensure a release-form annotated tag exists on HEAD so `git describe` in the build resolves to
 # something the Pebble app parses (vX.Y.Z / -beta / -rc) AND that encodes as release band.
-# idempotent: only created if not already present on HEAD.
-if ! git describe --tags --exact-match >/dev/null 2>&1; then
-  echo ">> no release-form tag on HEAD; creating annotated $SPIKE_TAG"
-  git tag -a "$SPIKE_TAG" -m "spike pt2 build" >/dev/null 2>&1 || true
-fi
+# If SPIKE_TAG exists on an older commit, move it to HEAD (the bundle carries the HEAD build).
+# This makes the recipe idempotent across new commits: re-running re-tags HEAD.
+git tag -f -a "$SPIKE_TAG" -m "spike pt2 build" HEAD >/dev/null 2>&1
 git describe --dirty
 
 # Fast path: keep the existing build/c4che configure (incremental) unless one is missing
