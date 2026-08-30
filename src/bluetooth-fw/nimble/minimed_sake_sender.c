@@ -121,10 +121,19 @@ static CommSessionTransportType prv_get_type(struct Transport *transport) {
   return CommSessionTransportType_QEMU;
 }
 
+// The loopback speaks for the MiniMed watchface specifically. Without this the watchface's outbound
+// AppMessages (its launch/reconnect "ready ping") match no session by UUID and fall back to the
+// phone's Hybrid session -- so the ping never reaches us, we never ACK + resend, and the watchface
+// stays stale until the next 60s poll happens to land while it is foreground. With the UUID the
+// session matches specifically (prv_get_app_session: uuid_equal wins over fallback) and the ping
+// routes to us.
+static const Uuid *prv_get_uuid(struct Transport *transport) { return &s_watchface_uuid; }
+
 static const TransportImplementation s_loopback_implementation = {
     .send_next = prv_send_next,
     .reset = prv_reset,
     .set_connection_responsiveness = prv_set_connection_responsiveness,
+    .get_uuid = prv_get_uuid,
     .get_type = prv_get_type,
 };
 
