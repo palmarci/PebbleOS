@@ -38,6 +38,10 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 - **End-to-end PROVEN on real HW (2026-07-21):** advertise as "Mobile PB" → pump connects → SAKE
   handshake → GATT-client CGM read → decrypt → continuous auto-updating BG in mmol/L, matching the
   pump's display exactly. Feasibility fully settled; the rest is productization.
+- **v54 BUILT 2026-08-30, awaiting HW: dual link (phone + pump at once) PoC.** Toggle is now
+  NORMAL⇄DUAL; NORMAL is a full `bt_ctl_reset_bluetooth()` restart (kill switch for sideload).
+  `BLE_MAX_CONNECTIONS` 2, pump's own advert job, swallowed pump link, pump-identity persistence,
+  pump-pairing window. Details + HW checklist: VERSIONS.md v54 entry.
 - Reconnect **HW-VERIFIED 2026-07-22** (v16): after a NORMAL⇄SPIKE toggle the pump reconnected by
   itself, re-ran the handshake, BG resumed.
 - **Rebased onto upstream v4.36.0 (v54, HW-VERIFIED 2026-08-24).** The 4.24 base capped the
