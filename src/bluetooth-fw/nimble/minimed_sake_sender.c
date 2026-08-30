@@ -108,6 +108,20 @@ static void prv_send_next(Transport *transport) {
 
 static void prv_reset(Transport *transport) {}
 
+// comm_session_open closes the *existing* system session when a new one connects (last-system-session
+// wins), via transport->close. The loopback's get_type is QEMU, which prv_get_system_session treats
+// as a last-resort system session, so a phone reconnect will call this to evict us. It must actually
+// close the session (and clear our pointer), or PPoGATT hits "System session already exists and
+// cannot be closed" and the phone loops connect/disconnect forever.
+static void prv_close(Transport *transport) {
+  bt_lock();
+  if (s_session) {
+    comm_session_close(s_session, CommSessionCloseReason_UnderlyingDisconnection);
+    s_session = NULL;
+  }
+  bt_unlock();
+}
+
 static void prv_set_connection_responsiveness(Transport *transport, BtConsumer consumer,
                                               ResponseTimeState state, uint16_t max_period_secs,
                                               ResponsivenessGrantedHandler granted_handler) {
@@ -131,6 +145,7 @@ static const Uuid *prv_get_uuid(struct Transport *transport) { return &s_watchfa
 
 static const TransportImplementation s_loopback_implementation = {
     .send_next = prv_send_next,
+    .close = prv_close,
     .reset = prv_reset,
     .set_connection_responsiveness = prv_set_connection_responsiveness,
     .get_uuid = prv_get_uuid,
