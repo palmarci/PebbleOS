@@ -108,11 +108,19 @@ static void prv_send_next(Transport *transport) {
 
 static void prv_reset(Transport *transport) {}
 
+// Forward: defined below with the session lifecycle. prv_close re-opens the loopback after a phone
+// reconnect evicts it, which routes through this same mode callback.
+static void prv_set_mode_cb(void *ctx);
+
 // comm_session_open closes the *existing* system session when a new one connects (last-system-session
 // wins), via transport->close. The loopback's get_type is QEMU, which prv_get_system_session treats
 // as a last-resort system session, so a phone reconnect will call this to evict us. It must actually
 // close the session (and clear our pointer), or PPoGATT hits "System session already exists and
 // cannot be closed" and the phone loops connect/disconnect forever.
+//
+// After the eviction the loopback is gone, so in DUAL mode the watchface would stop receiving data.
+// Re-open it once the phone's session is up: deferred to KernelMain so we don't race PPoGATT's own
+// comm_session_open (which is mid-flight and holds bt_lock when this runs).
 static void prv_close(Transport *transport) {
   bt_lock();
   if (s_session) {
@@ -120,6 +128,9 @@ static void prv_close(Transport *transport) {
     s_session = NULL;
   }
   bt_unlock();
+  if (minimed_sake_get_mode() == MinimedSakeModeDual) {
+    launcher_task_add_callback(prv_set_mode_cb, (void *)1);  // re-open the loopback
+  }
 }
 
 static void prv_set_connection_responsiveness(Transport *transport, BtConsumer consumer,
