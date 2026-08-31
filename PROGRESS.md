@@ -50,6 +50,15 @@ how to build and test, the code map, and what is left. Topic detail lives in its
   heartbeat, fixed in v55 (HW-verified overnight 2026-08-25, 7h37m uptime). It presented as
   "SPIKE reverts to NORMAL after a while" because `s_mode` is RAM-only — worth remembering as a
   diagnosis pattern: an unexplained mode revert means look for a reboot first.
+- **Pump firmware revision is `8.12.2`** (v56, HW-VERIFIED 2026-08-29). The baseline for comparing
+  against a newer, Simplera-Sync-capable pump; OpenMinimed's `todo.md` lists the characteristic as
+  never captured, so it is also a doc contribution once compared against the pump's own menus.
+- **v58 BUILT 2026-08-29, awaiting flash** (`build/sake-spike-v58-devinfo-safe.pbz`): reads all
+  nine Device Information characteristics once per boot. Replaces **v57, which hard-faulted twice
+  and dropped the watch to PRF** — losing the pump bond. Root cause unproven (the coredump is
+  unreachable); v58 removes the suspected cause, a stack-hungry GATT callback. Evidence and the
+  ruled-out theories are in the VERSIONS.md v58 entry.
+  **A logging change in a BLE callback can cost a re-pair — treat that path as risky.**
 - **v49 BUILT 2026-08-17, awaiting flash** (`build/sake-spike-v49-iob-log.pbz`): logs raw IOB
   milliunits to the flash log on every SRCP read (previously UI-ring-log only, so dumps had no
   IOB values) — data for recovering the pump's insulin decay curve. Carries v48 unchanged;
@@ -107,8 +116,12 @@ was wanted for — so **Stage 2 dual connection is now a convenience, not a debu
 Details worth knowing:
 
 - It needs `libpebble2`, which lives only in the pebble-tool venv, so the script re-executes
-  itself with that interpreter when the import fails — any `python3` works. `pyelftools` was
-  added to the same venv for the dehasher.
+  itself with that interpreter when the import fails — any `python3` works. `pyelftools` is needed
+  there too, for the dehasher. It is a `uv`-managed tool venv, so a `uv tool` upgrade/reinstall
+  rebuilds it and drops anything pip-installed by hand — the symptom is
+  `Could not import logdehash (No module named 'elftools')` and every line coming back as
+  `NL:xxxx`. Reinstall it as a recorded extra so it survives:
+  `uv tool install pebble-tool --with pyelftools`.
 - **The dict is per build.** Log lines are stored hashed and the hashes change every build, so an
   older generation needs that firmware's dictionary. `spike-build.sh` now archives one next to each
   `.pbz` as `sake-spike-vNN-<desc>.loghash.json`; pass it with `--dict`. Without the right dict the

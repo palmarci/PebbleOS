@@ -5,6 +5,52 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v58 (2026-08-29, BUILT, awaiting flash; `build/sake-spike-v58-devinfo-safe.pbz`): **fixes the
+  v57 crash**, defensively. Each DIS line is now composed into one *static* 80-byte buffer and
+  logged with a single `%s`, leaving the GATT callback's frame nearly empty. Also advances the
+  sweep on a failed read — v57 returned without advancing, so a field the pump refuses would
+  stall the sweep and re-read it every session.
+  The mechanism is **unproven**: the coredump is unreachable (no `pebble` command retrieves it,
+  no serial for PULSE), so this removes the suspected cause rather than demonstrating it. What is
+  established: two v57 boots hard-faulted at the same LR, resolving to
+  `picolibc vfprintf_str.c:69` (the `%s` path), each after a healthy pump session, and in g1 the
+  last log line lands 1 s before the sweep was due. Ruled out: the format strings are legal (two
+  `%s` is within the limit of 2, used in 25 other places in-tree) and
+  `check_elf_log_strings.py` passes clean on both the v57 and v58 ELFs.
+  Suspected cause: stack exhaustion on the NimBLE host task. v57's callback held 73 bytes of
+  buffers and then called `PBL_LOG`, which is itself stack-hungry — `logging.c` guards the same
+  hazard in `prv_use_default_log_msg`. v56 did this once with a 24-byte buffer and survived; v57
+  did it nine times with three times the frame.
+  **Flash with care**: two crashes in a row drop the watch to PRF, which costs the pump bond.
+
+- v57 (2026-08-29, **CRASHED on hardware, do not flash**; `build/sake-spike-v57-devinfo-all.pbz`): widens v56 from
+  the firmware revision to **all nine Device Information characteristics** the pump documents
+  (manufacturer, model, serial, hardware/firmware/software revision, System ID, PnP ID, IEEE
+  11073 regulatory cert) — so every field can be compared against what the pump shows in its own
+  menus. Strings are logged as text, the three binary fields as hex. NimBLE runs one GATT
+  procedure at a time per connection, so the sweep is chained off each read's `BLE_HS_EDONE`
+  rather than issued as nine parallel reads; it latches only when the whole sweep finishes, so an
+  aborted one retries from the start next session.
+  Note the serial and System ID are identifying: scrub before sharing a dump.
+  **Hard-faulted twice on hardware and dropped the watch to PRF** (2026-08-29), taking the pump
+  bond with it. Superseded by v58; see that entry for the evidence.
+
+- v56 (2026-08-29, **HW-VERIFIED 2026-08-29**; `build/sake-spike-v56-devinfo-fwrev.pbz`): reads the
+  pump's **Firmware Revision String** (SIG 0x2A26) once per boot, 20 s after polling starts, and
+  logs it as `SAKE: pump firmware revision '<s>'`. Plaintext `ble_gattc_read_by_uuid` over the
+  whole handle range, same shape as the hourly battery read — no SAKE, no shared buffers.
+  Why: Morten expects to move to a newer, Simplera-Sync/Instinct-capable 780G, and no capture
+  anywhere records which firmware produced our logs. The characteristic is listed as never
+  captured in OpenMinimed's `todo.md`, so whatever it returns is also a doc contribution — worth
+  comparing against the version the pump shows in its own menus, since they may differ.
+  Latches only on a successful read, so a failed one retries on the next session. The 0x2A26 in
+  `minimed_sake_service.c` is unrelated: that is the watch's *own* DIS, placeholder values served
+  to the pump so it agrees to pair.
+  Carries v55 unchanged. FLASH 95.16 %.
+  Result on hardware: **`8.12.2`** (`SAKE: pump firmware revision '8.12.2'`, 12:47:35), on a
+  healthy session — SAKE handshake, `BG new 189 mg/dL`, `IOB 850 mu`. Superseded by v57, which
+  reads the whole DIS.
+
 - v55 (2026-08-24, **HW-VERIFIED overnight 2026-08-25**;
   `build/sake-spike-v55-heartbeat-assert-fix.pbz`): **fixes the hourly reboot v54 inherited from
   upstream.** v54 asserted and reset an hour after every boot, which looked like "SPIKE falls back
