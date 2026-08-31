@@ -611,12 +611,34 @@ bool minimed_sake_read_handle_notify(uint16_t attr_handle, const uint8_t *data, 
   return false;
 }
 
+// Layer 3 diagnostic: classify a GATT op failure. A status of ENOTCONN / ETIMEOUT / an HCI
+// disconnect reason (0x08 spvn timeout, 0x13 remote user term, 0x16 local term, 0x22 LL rsp tmo,
+// 0x3e establish fail) is a LINK-DEAD signature -- the host knows the pump connection is gone, so
+// the disconnect event should follow shortly. Any other status is an op-level error on a live
+// link. Logs both the raw status and the verdict so a silent pump drop is attributable.
+static void prv_log_gatt_err(const char *op, uint16_t status) {
+  char line[40];
+  const bool link_dead =
+      status == BLE_HS_ENOTCONN || status == BLE_HS_ETIMEOUT ||
+      (status >= BLE_HS_ERR_HCI_BASE &&
+       ((status - BLE_HS_ERR_HCI_BASE) == 0x08 || (status - BLE_HS_ERR_HCI_BASE) == 0x13 ||
+        (status - BLE_HS_ERR_HCI_BASE) == 0x16 || (status - BLE_HS_ERR_HCI_BASE) == 0x22 ||
+        (status - BLE_HS_ERR_HCI_BASE) == 0x3e));
+  if (link_dead) {
+    snprintf(line, sizeof(line), "LINK DEAD %s err=0x%04x hdl=%u", op, status, s_conn);
+  } else {
+    snprintf(line, sizeof(line), "%s err=0x%04x", op, status);
+  }
+  minimed_sake_log(line);
+  if (link_dead) {
+    PBL_LOG_WRN("SAKE: %s failed with link-dead status 0x%04x", op, (unsigned)status);
+  }
+}
+
 static int prv_racp_write_cb(uint16_t conn, const struct ble_gatt_error *error,
                              struct ble_gatt_attr *attr, void *arg) {
   if (error->status != 0) {
-    char line[32];
-    snprintf(line, sizeof(line), "RACP write err=0x%04x", (uint16_t)error->status);
-    minimed_sake_log(line);
+    prv_log_gatt_err("RACP wr", (uint16_t)error->status);
     // No terminating indication will come for a failed write; skip the exchange now rather
     // than stalling the serialiser until the op timeout.
     if (s_op == PEND_CGM) prv_op_complete();
@@ -627,9 +649,7 @@ static int prv_racp_write_cb(uint16_t conn, const struct ble_gatt_error *error,
 static int prv_idd_racp_write_cb(uint16_t conn, const struct ble_gatt_error *error,
                                  struct ble_gatt_attr *attr, void *arg) {
   if (error->status != 0) {
-    char line[32];
-    snprintf(line, sizeof(line), "IDD RACP wr err=0x%04x", (uint16_t)error->status);
-    minimed_sake_log(line);
+    prv_log_gatt_err("IDD RACP wr", (uint16_t)error->status);
     // No terminating indication will come for a failed write; skip the exchange.
     if (s_op == PEND_ANNUNC) prv_op_complete();
   }
@@ -696,8 +716,7 @@ static int prv_idd_status_read_cb(uint16_t conn, const struct ble_gatt_error *er
                    s_idd_st.sensor_msg, (long)s_idd_st.reservoir_mu);
     }
   } else {
-    snprintf(line, sizeof(line), "st read err=0x%04x", (uint16_t)error->status);
-    minimed_sake_log(line);
+    prv_log_gatt_err("st read", (uint16_t)error->status);
   }
   prv_status_publish_if_done(PEND_STATUS);
   prv_op_complete();
@@ -713,11 +732,30 @@ static void prv_request(uint8_t mask) {
   }
 }
 
+// Layer 3 diagnostic: classify an immediate ble_gattc_* return code at dispatch time (before any
+// callback). An ENOTCONN/ETIMEOUT/HCI-disconnect rc means the host already knows the link is dead
+// at issue time; any other nonzero rc is an issue failure on a presumably-live link.
+static void prv_log_dispatch_rc(const char *op, int rc) {
+  char line[40];
+  const uint16_t status = (uint16_t)rc;
+  const bool link_dead =
+      status == BLE_HS_ENOTCONN || status == BLE_HS_ETIMEOUT ||
+      (status >= BLE_HS_ERR_HCI_BASE &&
+       ((status - BLE_HS_ERR_HCI_BASE) == 0x08 || (status - BLE_HS_ERR_HCI_BASE) == 0x13 ||
+        (status - BLE_HS_ERR_HCI_BASE) == 0x16 || (status - BLE_HS_ERR_HCI_BASE) == 0x22 ||
+        (status - BLE_HS_ERR_HCI_BASE) == 0x3e));
+  if (link_dead) {
+    snprintf(line, sizeof(line), "LINK DEAD %s rc=0x%04x hdl=%u", op, status, s_conn);
+  } else {
+    snprintf(line, sizeof(line), "%s rc=0x%04x", op, status);
+  }
+  minimed_sake_log(line);
+}
+
 // Issue the highest-priority pending exchange. Reads before reset (data lands ASAP; one reset
 // then covers a whole indication burst). On a failed issue, complete immediately -- no
 // indication will terminate an exchange that never started.
 static void prv_dispatch_cb(struct ble_npl_event *ev) {
-  char line[32];
   if (s_op != 0) return;  // in flight; prv_op_complete re-kicks
   if (s_pending & PEND_CGM) {
     s_pending &= ~PEND_CGM;
@@ -726,8 +764,7 @@ static void prv_dispatch_cb(struct ble_npl_event *ev) {
     int rc = ble_gattc_write_flat(s_conn, s_h_racp, RACP_REPORT_LAST_RECORD,
                                   sizeof(RACP_REPORT_LAST_RECORD), prv_racp_write_cb, NULL);
     if (rc != 0) {
-      snprintf(line, sizeof(line), "RACP write rc=0x%04x", (uint16_t)rc);
-      minimed_sake_log(line);
+      prv_log_dispatch_rc("RACP", rc);
       prv_op_complete();
       return;
     }
@@ -755,8 +792,7 @@ static void prv_dispatch_cb(struct ble_npl_event *ev) {
     }
     int rc = ble_gattc_write_flat(s_conn, s_h_idd_racp, req, req_len, prv_idd_racp_write_cb, NULL);
     if (rc != 0) {
-      snprintf(line, sizeof(line), "IDD RACP write rc=0x%04x", (uint16_t)rc);
-      minimed_sake_log(line);
+      prv_log_dispatch_rc("IDD RACP", rc);
       prv_op_complete();
       return;
     }
@@ -773,8 +809,7 @@ static void prv_dispatch_cb(struct ble_npl_event *ev) {
     s_srcp_len = 0;
     int rc = ble_gattc_write_flat(s_conn, s_h_srcp, enc, enc_len, prv_srcp_write_cb, NULL);
     if (rc != 0) {
-      snprintf(line, sizeof(line), "SRCP write rc=0x%04x", (uint16_t)rc);
-      minimed_sake_log(line);
+      prv_log_dispatch_rc("SRCP", rc);
       prv_op_complete();
       return;
     }
@@ -783,8 +818,7 @@ static void prv_dispatch_cb(struct ble_npl_event *ev) {
     s_op = PEND_STATUS;
     int rc = ble_gattc_read(s_conn, s_h_idd_status, prv_idd_status_read_cb, NULL);
     if (rc != 0) {
-      snprintf(line, sizeof(line), "st read rc=0x%04x", (uint16_t)rc);
-      minimed_sake_log(line);
+      prv_log_dispatch_rc("st", rc);
       prv_status_publish_if_done(PEND_STATUS);
       prv_op_complete();
       return;
@@ -803,8 +837,7 @@ static void prv_dispatch_cb(struct ble_npl_event *ev) {
     s_srcp_len = 0;
     int rc = ble_gattc_write_flat(s_conn, s_h_srcp, enc, enc_len, prv_srcp_write_cb, NULL);
     if (rc != 0) {
-      snprintf(line, sizeof(line), "TAS write rc=0x%04x", (uint16_t)rc);
-      minimed_sake_log(line);
+      prv_log_dispatch_rc("TAS", rc);
       prv_status_publish_if_done(PEND_TAS);
       prv_op_complete();
       return;
@@ -827,8 +860,7 @@ static void prv_dispatch_cb(struct ble_npl_event *ev) {
     s_srcp_len = 0;
     int rc = ble_gattc_write_flat(s_conn, s_h_srcp, enc, enc_len, prv_srcp_write_cb, NULL);
     if (rc != 0) {
-      snprintf(line, sizeof(line), "rst write rc=0x%04x", (uint16_t)rc);
-      minimed_sake_log(line);
+      prv_log_dispatch_rc("rst", rc);
       prv_op_complete();
       return;
     }
@@ -873,7 +905,7 @@ static int prv_battery_read_cb(uint16_t conn, const struct ble_gatt_error *error
   if (error->status == 0 && attr && attr->om && attr->om->om_len >= 1) {
     PBL_LOG_INFO("SAKE: pump battery %u pct", (unsigned)attr->om->om_data[0]);
   } else if (error->status != BLE_HS_EDONE) {
-    PBL_LOG_INFO("SAKE: pump battery read err=0x%04x", (uint16_t)error->status);
+    prv_log_gatt_err("battery read", (uint16_t)error->status);
   }
   return 0;
 }
@@ -892,6 +924,23 @@ static void prv_battery_timer_cb(struct ble_npl_event *ev) {
 
 static void prv_poll_timer_cb(struct ble_npl_event *ev) {
   if (s_push_mode) minimed_sake_log("fallback poll");
+  // Layer 4 diagnostic: does the host still believe the pump link is connected? Runs on the same
+  // cadence as the poll. If the pump has gone silent but conn_find still succeeds (and MTU is
+  // sane), the link is alive-in-NimBLE's-view -- the silence is the pump not pushing, not a
+  // dropped link. If conn_find fails, the host knows the link is gone even though no disconnect
+  // event has been swallowed yet.
+  {
+    struct ble_gap_conn_desc desc;
+    char line[48];
+    if (ble_gap_conn_find(s_conn, &desc) == 0) {
+      snprintf(line, sizeof(line), "lnk %u mtu=%u", s_conn,
+               (unsigned)ble_att_mtu(s_conn));
+      minimed_sake_log(line);
+    } else {
+      snprintf(line, sizeof(line), "lnk %u GONE", s_conn);
+      minimed_sake_log(line);
+    }
+  }
   prv_request(prv_full_poll_mask());
   const uint32_t secs = s_push_mode ? FALLBACK_AFTER_SECS : POLL_INTERVAL_SECS;
   ble_npl_callout_reset(&s_poll_co, ble_npl_time_ms_to_ticks32(secs * 1000));
@@ -938,9 +987,7 @@ static void prv_start_polling(void) {
 static int prv_srcp_write_cb(uint16_t conn, const struct ble_gatt_error *error,
                              struct ble_gatt_attr *attr, void *arg) {
   if (error->status != 0) {
-    char line[32];
-    snprintf(line, sizeof(line), "SRCP write err=0x%04x", (uint16_t)error->status);
-    minimed_sake_log(line);
+    prv_log_gatt_err("SRCP wr", (uint16_t)error->status);
     // No terminating indication will come for a failed write; skip the exchange now rather
     // than stalling the serialiser until the op timeout.
     if (s_op == PEND_TAS) prv_status_publish_if_done(PEND_TAS);
