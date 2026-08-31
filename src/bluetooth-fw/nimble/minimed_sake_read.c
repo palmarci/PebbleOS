@@ -92,6 +92,7 @@ static bool s_push_mode;  // false until the first indication of this connection
 
 static struct ble_npl_callout s_read_co;
 static struct ble_npl_callout s_poll_co;
+static struct ble_npl_callout s_wd_co;  // pump-liveness watchdog (silent-link retoggle)
 
 // Exchange serialiser (spec: docs/superpowers/specs/2026-07-27-pump-push-design.md). The pump
 // exchanges (CGM poll, SRCP IOB read, IDD Status read, SRCP TAS read, SRCP Reset Status) each
@@ -144,6 +145,13 @@ static int prv_idd_racp_write_cb(uint16_t conn, const struct ble_gatt_error *err
                                  struct ble_gatt_attr *attr, void *arg);
 
 static uint16_t s_conn;
+
+// Pump-liveness watchdog. If the pump was connected but no traffic arrives for this long, the link
+// is presumed silently dead (the controller may never deliver a disconnect), so re-toggle DUAL to
+// free the phantom connection slot and re-arm the pump advert. This is the simplest recovery --
+// not a diagnostic, hence separate from the Layer 4 'lnk' check.
+#define PUMP_WD_NO_TRAFFIC_SECS (15 * 60)
+static uint32_t s_last_pump_traffic;  // wall-clock time of the last pump data/exchange completion
 static uint16_t s_cgm_start, s_cgm_end;
 static uint16_t s_h_measurement, s_h_feature, s_h_racp;
 static uint16_t s_idd_start, s_idd_end, s_h_srcp;
@@ -415,6 +423,7 @@ static void prv_annunc_record_done(void) {
 
 // Feed an inbound pump notification/indication. Returns true if consumed (a CGM char we own).
 bool minimed_sake_read_handle_notify(uint16_t attr_handle, const uint8_t *data, uint16_t len) {
+  s_last_pump_traffic = (uint32_t)rtc_get_time();  // any pump notification = the link is alive
   if (s_h_measurement != 0 && attr_handle == s_h_measurement) {
     uint8_t plain[24];
     uint16_t plain_len = 0;
@@ -662,6 +671,21 @@ static void prv_op_complete(void) {
   if (s_pending != 0) {
     ble_npl_callout_reset(&s_dispatch_co, ble_npl_time_ms_to_ticks32(DISPATCH_DELAY_MS));
   }
+  // Any completed exchange proves the pump responded to a request; record it as traffic.
+  s_last_pump_traffic = (uint32_t)rtc_get_time();
+}
+
+// Watchdog tick: if in DUAL with the pump connected but silent for PUMP_WD_NO_TRAFFIC_SECS,
+// re-toggle DUAL to free the phantom slot and re-arm the pump advert. Runs on the BT host task.
+static void prv_wd_cb(struct ble_npl_event *ev) {
+  if (minimed_sake_get_mode() == MinimedSakeModeDual && minimed_sake_pump_connected() &&
+      ((uint32_t)rtc_get_time() - s_last_pump_traffic) > PUMP_WD_NO_TRAFFIC_SECS) {
+    minimed_sake_log("WD: pump silent, re-toggle");
+    PBL_LOG_WRN("SAKE: pump silent %us, re-toggling DUAL",
+                (unsigned)((uint32_t)rtc_get_time() - s_last_pump_traffic));
+    minimed_sake_watchdog_retoggle();
+  }
+  ble_npl_callout_reset(&s_wd_co, ble_npl_time_ms_to_ticks32(60 * 1000));
 }
 
 // Called when a STATUS or TAS exchange finishes (success, failure, or timeout). The two are
@@ -1272,6 +1296,7 @@ static void prv_read_kickoff(struct ble_npl_event *ev) {
 void minimed_sake_read_init(void) {
   ble_npl_callout_init(&s_read_co, nimble_port_get_dflt_eventq(), prv_read_kickoff, NULL);
   ble_npl_callout_init(&s_poll_co, nimble_port_get_dflt_eventq(), prv_poll_timer_cb, NULL);
+  ble_npl_callout_init(&s_wd_co, nimble_port_get_dflt_eventq(), prv_wd_cb, NULL);
   ble_npl_callout_init(&s_dispatch_co, nimble_port_get_dflt_eventq(), prv_dispatch_cb, NULL);
   ble_npl_callout_init(&s_op_timeout_co, nimble_port_get_dflt_eventq(), prv_op_timeout_cb, NULL);
   ble_npl_callout_init(&s_status_tick_co, nimble_port_get_dflt_eventq(), prv_status_tick_cb, NULL);
@@ -1283,6 +1308,8 @@ void minimed_sake_read_start(uint16_t conn_handle) {
   ble_npl_callout_stop(&s_dispatch_co);
   ble_npl_callout_stop(&s_op_timeout_co);
   s_conn = conn_handle;
+  s_last_pump_traffic = (uint32_t)rtc_get_time();  // fresh baseline; pump just connected
+  ble_npl_callout_reset(&s_wd_co, ble_npl_time_ms_to_ticks32(60 * 1000));
   s_cgm_start = s_cgm_end = 0;
   s_h_measurement = s_h_feature = s_h_racp = 0;
   s_idd_start = s_idd_end = s_h_srcp = 0;
@@ -1318,6 +1345,7 @@ void minimed_sake_read_start(uint16_t conn_handle) {
 void minimed_sake_read_stop(void) {
   ble_npl_callout_stop(&s_read_co);
   ble_npl_callout_stop(&s_poll_co);
+  ble_npl_callout_stop(&s_wd_co);
   ble_npl_callout_stop(&s_dispatch_co);
   ble_npl_callout_stop(&s_op_timeout_co);
   ble_npl_callout_stop(&s_status_tick_co);

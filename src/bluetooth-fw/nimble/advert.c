@@ -69,6 +69,11 @@ void minimed_sake_clear_link_state(void) {
   s_sake_conn_handle = BLE_HS_CONN_HANDLE_NONE;
   s_rejected_pump_conn = BLE_HS_CONN_HANDLE_NONE;
 }
+
+// True while the pump link is tracked as connected. Used by the pump-liveness watchdog.
+bool minimed_sake_pump_connected(void) {
+  return s_sake_conn_handle != BLE_HS_CONN_HANDLE_NONE;
+}
 #endif
 
 static int prv_device_name_read_event_cb(uint16_t conn_handle, const struct ble_gatt_error *error,
