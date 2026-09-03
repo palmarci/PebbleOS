@@ -8,7 +8,9 @@ the dual-connection work that would dissolve it. Pump *protocol* facts belong in
 ## Gotchas
 
 - Single BLE connection (`BLE_MAX_CONNECTIONS 1`): phone or pump, never both — toggle between
-  them (SPIKE=pump, NORMAL=phone). Dual was tried (v21/v22) and set aside. **Do NOT repeat the old
+  them (SPIKE=pump, NORMAL=phone). **v59 changes this to NORMAL⇄DUAL with `BLE_MAX_CONNECTIONS 2`
+  and a swallowed pump link; NORMAL is a full BT stack restart (kill switch).** Dual was tried
+  (v21/v22) and set aside. **Do NOT repeat the old
   "radio scheduling starves the pump link" conclusion — it was retracted**: the 0x08 supervision
   timeout that produced it reproduced on v23 *single-connection with phone BT off*, so a second
   link cannot have caused it (it was the FE81/FE82 bond mismatch). Dual has never been fairly
@@ -84,6 +86,17 @@ functional ones, against this project's own one-change-per-flash rule. Cosmetic 
 advert payload are not cosmetic.
 
 ## → NEXT UP: dual connection (phone + pump at the same time)
+
+**IMPLEMENTED as a PoC build (v59, 2026-08-30, AWAITING HW) — this section's blockers are the
+design; v59 is the first build that addresses all three.** The toggle is now NORMAL⇄DUAL (SPIKE is
+gone); NORMAL does a full `bt_ctl_reset_bluetooth()` stack restart (the kill switch, so sideload is
+safe if dual misbehaves). What changed vs the three blockers below: `BLE_MAX_CONNECTIONS` 1→2,
+`gap_le_advert_set_allow_advert_while_connected(true)` in DUAL lifts the advertising-XOR-connected
+rule, and the pump got its own `GAPLEAdvertisingJobTagMinimed` advert job (so the phone connecting
+no longer kills the pump's discoverability — it was piggybacking the Reconnection job, which
+`kernel_le_client` unschedules on gateway connect). The pump link is swallowed (driver-private:
+connect/disconnect/enc-change never reach the fw stack; the stack's single GAPLEConnection stays
+the phone's). See the v59 entry in `VERSIONS.md` for the full list and HW checklist.
 
 **This is the priority after v34, and it is a tooling fix, not a feature.** Decided 2026-07-26.
 Full detail in remaining-work item 5; this section exists so nobody has to infer the priority.

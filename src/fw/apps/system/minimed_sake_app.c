@@ -8,6 +8,7 @@
 #include "applib/app.h"
 #include "applib/app_timer.h"
 #include "applib/fonts/fonts.h"
+#include "applib/ui/recognizer/swipe.h"
 #include "applib/ui/ui.h"
 #include "kernel/pbl_malloc.h"
 #include "pbl/services/bluetooth/bluetooth_persistent_storage.h"
@@ -30,7 +31,8 @@ typedef struct {
   Window window;
   TextLayer text;
   AppTimer *timer;
-  char buf[384];
+  Recognizer *swipe_recognizer;
+  char buf[640];
   uint8_t bond_refresh_countdown;
   uint8_t bond_gateway;
   uint8_t bond_non_gateway;
@@ -38,8 +40,8 @@ typedef struct {
 } MinimedSakeAppData;
 
 static void prv_refresh(MinimedSakeAppData *data) {
-  const char *mode = (minimed_sake_get_mode() == MinimedSakeModeSpike)
-                         ? (minimed_sake_pump_paired() ? "MODE: SPIKE (FE81)" : "MODE: SPIKE (FE82)")
+  const char *mode = (minimed_sake_get_mode() == MinimedSakeModeDual)
+                         ? (minimed_sake_pump_paired() ? "MODE: DUAL (FE81)" : "MODE: DUAL (FE82)")
                          : "MODE: NORMAL";
 
   // Bond inventory: gw = phone bonds, pmp = pump (non-gateway) bonds, del = non-gateway bonds
@@ -63,7 +65,7 @@ static void prv_timer_cb(void *context) {
   data->timer = app_timer_register(SAKE_APP_REFRESH_MS, prv_timer_cb, NULL);
 }
 
-// SELECT toggles Normal<->Spike. Back is intentionally left unhandled so it exits the app to the
+// SELECT toggles Normal<->Dual. Back is intentionally left unhandled so it exits the app to the
 // launcher -- never trap the user out of the system menus.
 static void prv_select_click(ClickRecognizerRef recognizer, void *context) {
   minimed_sake_toggle_mode();
@@ -77,6 +79,14 @@ static void prv_down_click(ClickRecognizerRef recognizer, void *context) {
   prv_refresh(app_state_get_user_data());
 }
 
+// Right swipe = swipe-back: acts like the physical Back button and exits the app.
+static void prv_swipe_handler(const Recognizer *recognizer, RecognizerEvent event) {
+  if ((event == RecognizerEvent_Completed) &&
+      (swipe_recognizer_get_direction(recognizer) == SwipeDirection_Right)) {
+    app_window_stack_pop(true);
+  }
+}
+
 static void prv_click_config(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, prv_select_click);
   window_single_click_subscribe(BUTTON_ID_DOWN, prv_down_click);
@@ -88,6 +98,10 @@ static void prv_window_load(Window *window) {
   text_layer_init(&data->text, &root->bounds);
   text_layer_set_font(&data->text, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   layer_add_child(root, &data->text.layer);
+  // The window owns the recognizer and destroys it on unload.
+  data->swipe_recognizer =
+      swipe_recognizer_create(prv_swipe_handler, NULL, SwipeDirection_Right);
+  window_attach_recognizer(window, data->swipe_recognizer);
   prv_refresh(data);
 }
 
@@ -96,7 +110,7 @@ static void prv_handle_init(void) {
   memset(data, 0, sizeof(*data));
   app_state_set_user_data(data);
 
-  window_init(&data->window, "SAKE Spike");
+  window_init(&data->window, "MiniMed App");
   window_set_window_handlers(&data->window, &(WindowHandlers){
                                                 .load = prv_window_load,
                                             });
@@ -111,6 +125,7 @@ static void prv_handle_deinit(void) {
   if (data->timer) {
     app_timer_cancel(data->timer);
   }
+  data->swipe_recognizer = NULL;
   app_free(data);
 }
 
@@ -123,7 +138,7 @@ static void s_main(void) {
 const PebbleProcessMd *minimed_sake_app_get_info(void) {
   static const PebbleProcessMdSystem s_info = {
       .common.main_func = s_main,
-      .name = "SAKE Spike",
+      .name = "MiniMed App",
   };
   return (const PebbleProcessMd *)&s_info;
 }

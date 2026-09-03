@@ -38,6 +38,10 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 - **End-to-end PROVEN on real HW (2026-07-21):** advertise as "Mobile PB" → pump connects → SAKE
   handshake → GATT-client CGM read → decrypt → continuous auto-updating BG in mmol/L, matching the
   pump's display exactly. Feasibility fully settled; the rest is productization.
+- **v59 BUILT 2026-08-30, awaiting HW: dual link (phone + pump at once) PoC.** Toggle is now
+  NORMAL⇄DUAL; NORMAL is a full `bt_ctl_reset_bluetooth()` restart (kill switch for sideload).
+  `BLE_MAX_CONNECTIONS` 2, pump's own advert job, swallowed pump link, pump-identity persistence,
+  pump-pairing window. Details + HW checklist: VERSIONS.md v59 entry.
 - Reconnect **HW-VERIFIED 2026-07-22** (v16): after a NORMAL⇄SPIKE toggle the pump reconnected by
   itself, re-ran the handshake, BG resumed.
 - **Rebased onto upstream v4.36.0 (v54, HW-VERIFIED 2026-08-24).** The 4.24 base capped the
@@ -91,11 +95,26 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 BT sideload steps; pump + watchface test procedures; the FE81/FE82 reconciliation fix; log
 vocabulary). Quick facts kept here:
 
-- No local toolchain; build in Docker image **`pebbleos-build:local`** (recreate per "How to build"
-  below if gone). `spike-build.sh` wraps the whole Docker invocation.
+- No local toolchain; build in Docker image **`ghcr.io/coredevices/pebbleos-docker:v6`** (official CI
+  image, not the old `pebbleos-build:local`). `spike-build.sh` wraps the whole Docker invocation.
 - Everything is behind Kconfig `CONFIG_MINIMED_SAKE_SPIKE`; boots NORMAL (ordinary Pebble).
   "SAKE Spike" app: SELECT = NORMAL⇄SPIKE, DOWN = forget pump, Back = exit.
 - Crypto changes: run `tools/minimed_sake_hosttest/` (`make run`, 24/24) before reflashing.
+
+### PT2 (obelix) port — verified build recipe
+
+The spike now builds and boots on the Pebble Time 2 (`obelix@pvt`, SiFli SF32LB52). The working
+recipe is exacting; see `TESTING.md` for the full failure table. Essentials:
+
+- Build **release** (`CONFIG_RELEASE=y`) and produce ONE correctly-linked single-slot bundle per
+  slot — no dual-slot repack, no manifest rewrite. `spike-build.sh` emits `_slot0.pbz` and
+  `_slot1.pbz` and shares both.
+- Keep a **release-form annotated git tag** (default `v4.36.9`) on HEAD so the manifest versionTag
+  parses in the Pebble app and encodes as release band.
+- The app targets the slot NOT running (`1 - runningSlot`) and requires `firmware.slot` to match,
+  so flash whichever slot bundle the app asks for — the "does not parse" that appeared after a
+  working slot0 flash was this slot race, not a build regression.
+- Verify band 0x01 and version > stock (4.36.2) before flashing.
 
 ### After-the-fact logs from a SPIKE session (`tools/dump_flash_logs.py`)
 
@@ -153,11 +172,11 @@ DB, so bond-storage work can be genuine TDD with no hardware. Run it in Docker l
 - `./waf test` uses the `test` waf **variant** (`build/test/`), so it does *not* clobber the
   firmware build and is fine to run with the asterix configure in place. First run ~2 min.
 
-### How to build (recreate the image if `pebbleos-build:local` is gone)
+### How to build (Docker)
 
-`ghcr.io/coredevices/pebbleos-docker:v6` + `pip install -r requirements.txt`, then `docker commit`.
-Submodules must be checked out (skip the huge `third_party/hal_sifli/SiFli-SDK`, obelix-only;
-`resources/iconography` is required or the resource build dies).
+`ghcr.io/coredevices/pebbleos-docker:v6` is the official CI image; it installs deps itself
+(`pip install -r requirements.txt`) inside each container run, so no `docker commit` is needed.
+Submodules must be checked out (`resources/iconography` is required or the resource build dies).
 
 
 ## Code map (branch `spike/minimed-sake`; all committed, nothing pushed)

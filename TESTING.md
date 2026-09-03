@@ -6,14 +6,39 @@ The streamlined loop for iterating on the spike firmware. See `PROGRESS.md` for 
 ## Build + deploy (one command)
 
 ```sh
-./spike-build.sh <desc>              # build + bundle -> build/sake-spike-vN-<desc>.pbz, adb-push to phone
-./spike-build.sh <desc> --no-push    # skip the adb push
+./spike-build.sh <desc>              # build + bundle -> build/sake-spike-vN-<desc>.pbz, share to phone
+./spike-build.sh <desc> --no-push    # skip the share (just build the versioned .pbz)
 ./spike-build.sh <desc> --configure  # add this after Kconfig / app-registry changes
 ```
 
 - Auto-increments the version number and writes `build/sake-spike-vN-<desc>.pbz`.
-- Pushes to the phone's `/sdcard/Download/` over adb (phone must be USB-connected; one device).
-- The Docker image `pebbleos-build:local` must exist (see PROGRESS.md "How to build" if it's gone).
+- Shares to the phone over **kdeconnect** (`kdeconnect-cli --share`) — no USB/adb needed.
+- Builds in Docker image **`ghcr.io/coredevices/pebbleos-docker:v6`** (official CI image).
+
+### The PT2 build recipe — read before deviating
+
+The only images that **parse in the Pebble app** AND **boot on the PT2** are RAW single-slot
+bundles built **release** (`CONFIG_RELEASE=y`) from a **release-form git tag** — one bundle per
+slot. `spike-build.sh` builds and shares both `_slot0.pbz` and `_slot1.pbz`.
+
+**Slot race (why a working file suddenly "does not parse"):** the app resolves a sideload to the
+slot *not* currently running (`updateToSlot = 1 - runningSlot`) and its safety check requires
+`firmware.slot == updateToSlot`. So a slot0-only pbz parses when the watch runs slot1, but once
+the watch boots that slot0 image it runs slot0 and the app demands slot1 — same file, now a parse
+error. Hence: keep both slot builds on the phone and flash the one the app asks for.
+
+| Variant | Symptom | Why |
+|---|---|---|
+| Non-release build (`CONFIG_RELEASE` dropped) | black screen, no splash | non-release paths hung the obelix boot/display |
+| Dual-slot repack (one pbz, slot0+slot1 dirs) | black screen | each slot shares a link layout; the repacked slot1 copy was the slot0-linked image, mislinked at slot1 |
+| Manifest `versionTag` rewrite | "did not parse" | manifest-only patch corrupts what the app expects |
+| Dev band (dirty/non-release git describe) | "did not parse" | app's version parser needs a release-form tag |
+| Single slot0-only build when watch runs slot0 | "did not parse" | app wants slot1 (slot race) — not a build fault |
+
+So: **one correctly-linked bundle per slot, release build, release-form tag. Do not repack, do
+not rewrite the manifest, do not run non-release.** `spike-build.sh` moves the annotated tag
+`SPIKE_TAG` (default `v4.36.9`) to HEAD each run, builds slot0 and slot1 separately, verifies each
+is release band 0x01 with version > stock (4.36.2), and shares both over kdeconnect.
 
 ## Flash (BT sideload — no dev kit)
 

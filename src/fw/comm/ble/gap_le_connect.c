@@ -592,6 +592,13 @@ void bt_driver_handle_le_encryption_change_event(const BleEncryptionChange *even
   // Bluetopia doesn't set the 'is_random_address' field in the encryption change event, so using
   // gap_le_connection_by_device() will fail.
   GAPLEConnection *connection = gap_le_connection_by_addr(&event->dev_address);
+  if (!connection) {
+    // A connection that was never routed to the firmware stack (e.g. a rejected or swallowed
+    // MiniMed pump link that still encrypts) has no GAPLEConnection. Dereferencing it below would
+    // be the v31 hard-fault class, so bail instead.
+    PBL_LOG_ERR("LE encryption change for unknown connection, ignoring");
+    goto unlock;
+  }
   if (connection->is_encrypted) {
     PBL_LOG_INFO("LE encryption change: refreshed");
     goto unlock;

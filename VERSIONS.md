@@ -5,6 +5,31 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v59 (2026-08-30, BUILT, **AWAITING HW**, dual link PoC): **phone + pump at the same time, with
+  NORMAL as the full kill switch.** The mode toggle is now NORMAL⇄DUAL (SPIKE is gone). The single
+  connection slot and the advertising-XOR-connected rule were the blockers; both lifted:
+  `BLE_MAX_CONNECTIONS` 1→2 (sf32lb52 syscfg), the advert scheduler gains an
+  "advertise while connected" flag set in DUAL (`gap_le_advert_set_allow_advert_while_connected`),
+  and the pump gets its **own** `GAPLEAdvertisingJobTagMinimed` advert job (fast 100 ms, survives
+  the phone's Reconnection job being unscheduled when the phone connects). The pump link is
+  **swallowed** in DUAL: connect/disconnect/enc-change route into the SAKE layer only, never into
+  the Pebble firmware stack (the stack keeps a single GAPLEConnection for the phone). Swallow
+  covers the enc-change NULL-deref (the v31 fault class) with a matching guard in
+  `gap_le_connect.c`. Pump identity is now persisted (`pumpaddr` settings key) so a cold boot
+  classifies the pump before its first handshake; a **pump-pairing window** (legacy Just Works,
+  FE82) opens when DUAL has no pump bond and closes on handshake, with a cached gateway identity so
+  a reconnecting phone in that window is not mis-swallowed. Loopback watchface session opens as
+  `TransportDestinationApp` (no longer evicts the real phone session). **NORMAL is the complete
+  kill switch: `bt_ctl_reset_bluetooth()`** — full stack stop/start back to clean phone-only, so
+  firmware sideload is safe if dual misbehaves. Handles are cleared on DUAL entry (not before the
+  reset) and a phone reusing a stale pump handle clears it, so no swallowed-phone-disconnect. Host
+  tests 109/109, waf suite green, build clean. HW checklist: (1) DUAL — both `conn phone m=D` and
+  pump `HANDSHAKE OK` live at once; (2) `pebble logs --phone 127.0.0.1` works while pump link is
+  up; (3) NORMAL — clean restart, phone reconnects, sideload works. Expect `adv START FAIL` once
+  per DUAL both-links-up episode (pool full, suppressed after the first line).
+  Numbered v59 on merge: the branch called it v54, which was already taken. It was built on the
+  v55 base, so v56-v58 (the DIS reads and the v57 crash fix) were not in it — this merge is the
+  first tree carrying both lines, and the HW checklist above is untested against that build.
 - v58 (2026-08-29, BUILT, awaiting flash; `build/sake-spike-v58-devinfo-safe.pbz`): **fixes the
   v57 crash**, defensively. Each DIS line is now composed into one *static* 80-byte buffer and
   logged with a single `%s`, leaving the GATT callback's frame nearly empty. Also advances the
