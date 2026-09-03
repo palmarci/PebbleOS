@@ -87,8 +87,7 @@ static GAPLEAdvertisingJobRef s_pump_advert_job;
 
 // Cached identity of the phone (gateway) bond, captured when the pump-pairing window opens so a
 // reconnecting phone during the window is not misclassified as the pump (whose identity is unknown
-// until its first handshake). RAM-only: the window opens on the app/KernelMain task, so the flash
-// read happens there, never on the BT host task.
+// until its first handshake). RAM-only, refreshed on every DUAL entry and on stack re-init.
 static bool s_gateway_addr_known;
 static ble_addr_t s_gateway_addr;
 
@@ -213,7 +212,9 @@ bool minimed_sake_pump_pairing_window(void) {
 }
 
 // Cache the phone (gateway) identity so a reconnecting phone during the pump-pairing window is not
-// misclassified as the pump. Called on the app/KernelMain task (toggle to DUAL, forget-pump).
+// misclassified as the pump. Called on the app/KernelMain task (toggle to DUAL, forget-pump) and
+// on the BT host task from minimed_sake_service_init. The settings read is safe on either --
+// prv_load_pump_paired below already reads the same way from service_init.
 void minimed_sake_cache_gateway_addr(void) {
   s_gateway_addr_known = false;
   BTBondingID gw = bt_persistent_storage_get_ble_ancs_bonding();
