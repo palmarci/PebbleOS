@@ -5,6 +5,32 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v60 (2026-09-03, BUILT, **AWAITING HW**; `build/sake-spike-v60-dual-link-merge.pbz`): **v59's dual
+  link ported to asterix** (Pebble 2 Duo / nRF52840) and merged with the v56-v58 line. v59 was
+  built on PT2 only; three things had to change for it to mean anything on this watch:
+  `MYNEWT_VAL_BLE_MAX_CONNECTIONS` 1 -> 2 in the **nrf52** syscfg (v59 raised it only on sf32lb52,
+  so DUAL had no second slot to put the pump in), gated on `CONFIG_MINIMED_SAKE_SPIKE` like the SM
+  values beside it. Confirmed to take effect: KERNEL_RAM 54.17 % -> 54.59 % (+640 B, the second
+  connection's host state). FLASH 95.37 %.
+  Also fixes a build break v59 carried in: `s_last_adv_enable_ok` in `advert.c` is declared under
+  `#ifdef CONFIG_MINIMED_SAKE_SPIKE` but was read and written outside it, so **any stock build of
+  the nimble driver failed to compile** (`'s_last_adv_enable_ok' undeclared`, advert.c:711 —
+  reproduced, then fixed). Spike builds never saw it. And `minimed_sake_cache_gateway_addr`'s
+  comment claimed the settings read never happens on the BT host task, which
+  `minimed_sake_service_init` now does; corrected to match (`prv_load_pump_paired` in the same
+  function already reads that way, so the behaviour is fine — only the comment was wrong).
+  `spike-build.sh` regained the asterix recipe as a **board profile**: default asterix (local
+  image, single bundle, no release band), `--pt2` for obelix (CI image, slot0+slot1, band check).
+  v59's script was PT2-only, which left no way to build this watch.
+  Host tests 112/112, `./waf test` green, asterix build clean, stock (non-spike) asterix build
+  clean.
+  **Untested on hardware, and the merge is untested on either watch.** Two v59 changes reverse
+  things this line had established on asterix, so they are the first suspects if it misbehaves:
+  the pump advert now uses a **plain identity address always** (v58 and earlier switched to an RPA
+  once the pump was bonded, with a comment saying the pump only reconnects to an RPA), and the
+  Medtronic payload moved out of the `set_advertising_data` hijack into its own scheduler job.
+  HW checklist is v59's, plus: does the bonded pump still reconnect at all?
+
 - v59 (2026-08-30, BUILT, **AWAITING HW**, dual link PoC): **phone + pump at the same time, with
   NORMAL as the full kill switch.** The mode toggle is now NORMAL⇄DUAL (SPIKE is gone). The single
   connection slot and the advertising-XOR-connected rule were the blockers; both lifted:
