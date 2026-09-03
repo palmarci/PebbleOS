@@ -203,7 +203,7 @@ New files (all spike-only via wscript/ifdef):
   `send_iob` are separate setters (BG/IOB arrive from different reads); `send_iob` deliberately
   does NOT advance the BG timestamp. `send_next` drains the watchface's outbox: ready ping
   (CMD_PUSH) → ACK + immediate push; its ACKs of our pushes are swallowed (loop guard). Protocol:
-  `pebble-glucose-watchface/docs/PEBBLE_GLUCOSE_PROTOCOL.md`.
+  `pebble-glucose-protocol/PROTOCOL.md`.
 - `src/fw/popups/minimed_sake_spike_ui.{c,h}` — spike core: log ring buffer, mode flag, stage
   reports; declares the app↔BT-layer seam (`force_readvertise`, `pump_paired`, `forget_pump`,
   `sender_set_mode`).

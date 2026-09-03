@@ -3,7 +3,7 @@
 The on-watch firmware injects AppMessages into `../pebble-glucose-watchface` unmodified. This file
 holds the launch-crash saga (currently dormant) and the launch-gap gotcha behind it. Firmware
 architecture is in `PROGRESS.md`; the wire format is
-`../pebble-glucose-watchface/docs/PEBBLE_GLUCOSE_PROTOCOL.md`.
+`../pebble-glucose-protocol/PROTOCOL.md`.
 
 ## The "failed screen" is usually an app FETCH failure, not a crash (root-caused 2026-08-03)
 
