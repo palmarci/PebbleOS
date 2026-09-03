@@ -34,6 +34,13 @@ NEWLOG_HASHED_INFO_REGEX = (
 )
 POINTER_FORMAT_TAG_REGEX = r"(?P<format>%-?[0-9]*)p"
 HEX_FORMAT_SPECIFIER_REGEX = r"%[- +#0]*\d*(\.\d+)?(hh|h|l|ll|j|z|t|L)?(x|X)"
+# C length modifiers, which Python's % formatting mostly rejects: it ignores h, l and L but
+# raises "unsupported format character" on hh, ll, z, j and t. So a firmware line using
+# PRIu8 (-> %hhu), PRIu64 (-> %llu) or %zu came out as an error string instead of a message.
+# Python ints are arbitrary precision, so dropping the modifier formats the value correctly.
+LENGTH_MODIFIER_REGEX = (
+    r"(?P<format>%[- +#0]*\d*(?:\.\d+)?)(?:hh|ll|[hlLjzt])(?=[diouxXeEfFgGaAcs])"
+)
 
 # re patterns
 STR_LITERAL_PATTERN = re.compile(STR_LITERAL_REGEX)
@@ -50,6 +57,7 @@ NEWLOG_LINE_SUPPORT_PATTERN = re.compile(NEWLOG_LINE_SUPPORT_REGEX)
 NEWLOG_HASHED_INFO_PATTERN = re.compile(NEWLOG_HASHED_INFO_REGEX)
 POINTER_FORMAT_TAG_PATTERN = re.compile(POINTER_FORMAT_TAG_REGEX)
 HEX_FORMAT_SPECIFIER_PATTERN = re.compile(HEX_FORMAT_SPECIFIER_REGEX)
+LENGTH_MODIFIER_PATTERN = re.compile(LENGTH_MODIFIER_REGEX)
 
 # Output file lines
 FORMAT_IDENTIFIER_STRING_FMT = 'char *format_string_{} = "{}";\n'

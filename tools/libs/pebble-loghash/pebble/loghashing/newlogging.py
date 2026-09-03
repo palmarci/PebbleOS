@@ -17,6 +17,7 @@ from pebble.loghashing.constants import (
     NEWLOG_HASHED_INFO_PATTERN,
     POINTER_FORMAT_TAG_PATTERN,
     HEX_FORMAT_SPECIFIER_PATTERN,
+    LENGTH_MODIFIER_PATTERN,
 )
 
 hex_digits = set(string.hexdigits)
@@ -200,6 +201,10 @@ def parse_message(msg, log_dict):
 
     # Python's 'printf' doesn't support %p. Sigh. Convert to %x and hope for the best
     safe_output_msg = POINTER_FORMAT_TAG_PATTERN.sub("\g<format>x", output_dict["msg"])
+
+    # Nor does it support the C length modifiers hh/ll/z/j/t, so drop them. Without this a line
+    # using PRIu8 or PRIu64 dehashes to "ERROR: unsupported format character".
+    safe_output_msg = LENGTH_MODIFIER_PATTERN.sub(r"\g<format>", safe_output_msg)
 
     # Python's 'printf' doesn't handle (negative) 32-bit hex values correct. Build a new
     # arg list from the parsed arg list by searching for %<format>X conversions and masking
