@@ -6,8 +6,10 @@ The streamlined loop for iterating on the spike firmware. See `PROGRESS.md` for 
 > **SPIKE is DUAL since v59.** The mode toggle is NORMAL<->DUAL and the watch now holds the phone
 > and the pump at the same time, so the procedures below that say "phone BT off" or "the toggle
 > drops the phone link" describe the old single-slot behaviour. NORMAL is still the kill switch
-> (full Bluetooth stack restart, phone-only) and is still what you sideload from. Not yet re-run
-> on hardware under DUAL — treat each one's expected result as unverified until it is.
+> (full Bluetooth stack restart, phone-only). Sideloading no longer needs it: the phone session
+> survives with the pump connected (HW-verified 2026-09-03, v62), so `pebble logs` and
+> `dump_flash_logs.py` work mid-session. The procedures below have not been re-run under DUAL —
+> treat each one's expected result as unverified until it is.
 
 ## Build + deploy (one command)
 

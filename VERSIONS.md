@@ -5,13 +5,31 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
-- v62 (2026-09-03, BUILT, **AWAITING HW**; `build/sake-spike-v62-pump-addr-bondfix.pbz`): **fixes
-  the v61 boot hang that dropped the watch to PRF.** v61's `prv_adopt_pump_bond_cb` called
+- v62 (2026-09-03, **HW-VERIFIED 2026-09-03 — the dual link works on asterix**;
+  `build/sake-spike-v62-pump-addr-bondfix.pbz`): **fixes the v61 boot hang that dropped the watch
+  to PRF**, and is the first build with phone and pump connected at the same time on this watch.
+  Evidence: `../logs/watch/2026-09-03-g0-v62-dual-link-first.txt`. Phone on handle 1
+  (`LE Conn Compl ... hdl=1`, PPoGATT session open), DUAL entered at 21:12:20
+  (`Scheduling advertising job: MMD`), pump on handle 2 at 21:12:31 (`SAKE: pump WRITE conn=2`),
+  `BG new 102 mg/dL` and `IOB 1025 mu` a few seconds later. The pump was classified correctly:
+  there is **no `LE Conn Compl` for the pump anywhere in the log**, so its connect was swallowed
+  rather than routed into the firmware stack -- which is what v61's address fix was for, and the
+  cheapest way to check that classification from a flash dump. `Failed to start advertising
+  (0x0006)` appears exactly once, so the once-per-episode suppression works.
+  **The tooling unblock is real**: `PpAppMessage`, `PpScreenshot` and `PpLogDump` all ran over the
+  phone *after* the pump connected -- this log was pulled with the pump link up, no toggle. The
+  watchface renders once its updated protocol keys are installed on both sides.
+  **v58's DIS crash fix also held** (first time on hardware): the full sweep ran clean where v57
+  hard-faulted twice. See the DIS findings note below. v61's `prv_adopt_pump_bond_cb` called
   `bt_persistent_storage_is_ble_ancs_bonding` from inside
   `bt_persistent_storage_for_each_ble_pairing`, which holds the bonding-DB mutex for the duration
   of the callback. That mutex is not recursive, so the callback self-deadlocked -- on the NimBLE
-  host task, during `minimed_sake_service_init`, so `ble_hs_sched_start` never completed and
-  `init.c`'s `PBL_CROAK("NimBLE host start timed out")` rebooted the watch. Every boot, hence PRF.
+  host task, during `minimed_sake_service_init`, so `ble_hs_sched_start` cannot complete and
+  `init.c`'s `PBL_CROAK("NimBLE host start timed out")` reboots the watch. Every boot, hence PRF.
+  **That croak was never captured** -- by the time the watch was recovered the v61 generation had
+  rotated out (only g0+g1 are kept), and a hang before the log flushes may write nothing at all.
+  So the mechanism is read off the code plus the in-tree comment, and corroborated by v62 booting;
+  it is not an observed reboot reason. Don't cite it as one.
   **The trap was already documented in-tree** at `src/fw/apps/system/settings/bluetooth.c:157`, at
   the only other call site, which collects inside the callback and filters after the iteration
   returns; v62 does the same. It also only fires on a watch that has a stored pump bond, which is
@@ -24,7 +42,16 @@ files are listed there.
   bond) is invisible to `waf test` and to the build. v60 is the fallback -- it predates this code.
   Carries v60 and v61's persistence fix. Host tests 112/112, `./waf test` green. FLASH 95.39 %.
 
-- v61 (2026-09-03, BUILT, **AWAITING HW**; `build/sake-spike-v61-pump-addr-persist.pbz`): **fixes
+- **DIS capture (v62, 2026-09-03)** — the pump's full Device Information Service, read on hardware
+  and worth contributing to OpenMinimed's `Documentation/` (its `todo.md` lists DIS as never
+  captured). Manufacturer `Medtronic`, model `MMT-1885`, hardware revision `A2.01`, firmware
+  revision `8.12.2`, **software revision is an empty string**, PnP ID `01f90100001001`. The IEEE
+  11073 regulatory certificate is the one field the pump refuses: `read err=0x0106`
+  (ATT request not supported). Serial and System ID also read but are identifying — **scrub both
+  before anything public**.
+
+- v61 (2026-09-03, **BOOT-LOOPED TO PRF on hardware, do not flash**; superseded by v62;
+  `build/sake-spike-v61-pump-addr-persist.pbz`): **fixes
   a first-connect misclassification v59 introduced.** v59 persists the pump's identity under a new
   `pumpaddr` settings key, but the only writer is `prv_store_pump_paired_cb`, reached through
   `prv_set_pump_paired`, which returns early when the paired flag does not change. On a watch

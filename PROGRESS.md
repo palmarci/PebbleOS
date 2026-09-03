@@ -38,12 +38,17 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 - **End-to-end PROVEN on real HW (2026-07-21):** advertise as "Mobile PB" → pump connects → SAKE
   handshake → GATT-client CGM read → decrypt → continuous auto-updating BG in mmol/L, matching the
   pump's display exactly. Feasibility fully settled; the rest is productization.
-- **v62 BUILT 2026-09-03, awaiting HW: fixes the v61 boot hang (PRF).** v61 read the bonding DB
+- **DUAL LINK HW-VERIFIED 2026-09-03 (v62): phone and pump connected at once on asterix.** BG and
+  IOB flow from the pump while the phone session stays up, so `pebble logs` / sideload no longer
+  cost the pump link — the tooling unblock that motivated this whole item. Capture:
+  `../logs/watch/2026-09-03-g0-v62-dual-link-first.txt`. v58's DIS sweep fix verified in the same
+  session. Details: VERSIONS.md v62 entry.
+- **v62 fixes the v61 boot hang (PRF).** v61 read the bonding DB
   from inside `for_each_ble_pairing`'s callback, which holds a non-recursive mutex -- self-deadlock
   on the BT host task during init, croak, reboot loop, PRF. Filter after the iteration (as
   `settings/bluetooth.c:157` already documents) and move the lookup to KernelMain. Details:
   VERSIONS.md v62 entry.
-- **v61 BUILT 2026-09-03, awaiting HW: pump identity actually persists.** v59's `pumpaddr` key was
+- **v61 BOOT-LOOPED TO PRF, do not flash (superseded by v62): pump identity actually persists.** v59's `pumpaddr` key was
   never written on an already-paired watch, so the pump's first connect of every boot was
   classified as the phone and its disconnect then swallowed, leaking a GAPLEConnection. Persist on
   handshake, and recover from the bond store for watches paired before the key existed. Details:

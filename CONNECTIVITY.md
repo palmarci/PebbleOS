@@ -87,8 +87,10 @@ advert payload are not cosmetic.
 
 ## → NEXT UP: dual connection (phone + pump at the same time)
 
-**IMPLEMENTED as a PoC build (v59, 2026-08-30, AWAITING HW) — this section's blockers are the
-design; v59 is the first build that addresses all three.** The toggle is now NORMAL⇄DUAL (SPIKE is
+**IMPLEMENTED (v59) and HW-VERIFIED on asterix 2026-09-03 (v62) — this section's blockers are the
+design; v59 is the first build that addresses all three, v62 the first that runs.** Phone on
+handle 1 and pump on handle 2 at once, BG/IOB flowing, phone session usable throughout
+(`../logs/watch/2026-09-03-g0-v62-dual-link-first.txt`). The toggle is now NORMAL⇄DUAL (SPIKE is
 gone); NORMAL does a full `bt_ctl_reset_bluetooth()` stack restart (the kill switch, so sideload is
 safe if dual misbehaves). What changed vs the three blockers below: `BLE_MAX_CONNECTIONS` 1→2,
 `gap_le_advert_set_allow_advert_while_connected(true)` in DUAL lifts the advertising-XOR-connected
