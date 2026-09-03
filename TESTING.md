@@ -3,17 +3,27 @@
 The streamlined loop for iterating on the spike firmware. See `PROGRESS.md` for status/code map,
 `VERSIONS.md` for the build and dev history.
 
+> **SPIKE is DUAL since v59.** The mode toggle is NORMAL<->DUAL and the watch now holds the phone
+> and the pump at the same time, so the procedures below that say "phone BT off" or "the toggle
+> drops the phone link" describe the old single-slot behaviour. NORMAL is still the kill switch
+> (full Bluetooth stack restart, phone-only) and is still what you sideload from. Not yet re-run
+> on hardware under DUAL — treat each one's expected result as unverified until it is.
+
 ## Build + deploy (one command)
 
 ```sh
-./spike-build.sh <desc>              # build + bundle -> build/sake-spike-vN-<desc>.pbz, share to phone
+./spike-build.sh <desc>              # asterix (Pebble 2 Duo) -> build/sake-spike-vN-<desc>.pbz
+./spike-build.sh <desc> --pt2        # obelix (Pebble Time 2) -> ..._slot0.pbz + ..._slot1.pbz
 ./spike-build.sh <desc> --no-push    # skip the share (just build the versioned .pbz)
 ./spike-build.sh <desc> --configure  # add this after Kconfig / app-registry changes
 ```
 
 - Auto-increments the version number and writes `build/sake-spike-vN-<desc>.pbz`.
-- Shares to the phone over **kdeconnect** (`kdeconnect-cli --share`) — no USB/adb needed.
-- Builds in Docker image **`ghcr.io/coredevices/pebbleos-docker:v6`** (official CI image).
+- Shares to the phone over **adb** (`/sdcard/Download`), falling back to kdeconnect.
+- **asterix** (the default): Docker image `pebbleos-build:local`, one bundle, no release band.
+- **obelix** (`--pt2`): image `ghcr.io/coredevices/pebbleos-docker:v6` (official CI), two
+  single-slot bundles, release build, release-band check. The rest of this section is that recipe.
+- Switching boards re-runs `waf configure` automatically (the c4che board no longer matches).
 
 ### The PT2 build recipe — read before deviating
 
