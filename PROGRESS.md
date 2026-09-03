@@ -38,6 +38,11 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 - **End-to-end PROVEN on real HW (2026-07-21):** advertise as "Mobile PB" → pump connects → SAKE
   handshake → GATT-client CGM read → decrypt → continuous auto-updating BG in mmol/L, matching the
   pump's display exactly. Feasibility fully settled; the rest is productization.
+- **v61 BUILT 2026-09-03, awaiting HW: pump identity actually persists.** v59's `pumpaddr` key was
+  never written on an already-paired watch, so the pump's first connect of every boot was
+  classified as the phone and its disconnect then swallowed, leaking a GAPLEConnection. Persist on
+  handshake, and recover from the bond store for watches paired before the key existed. Details:
+  VERSIONS.md v61 entry.
 - **v60 BUILT 2026-09-03, awaiting HW: v59's dual link ported to asterix.** v59 raised
   `BLE_MAX_CONNECTIONS` only on sf32lb52, so DUAL had no second connection slot on this watch;
   the nrf52 syscfg now matches (spike-gated, +640 B KERNEL_RAM). Also fixes a stock-build compile

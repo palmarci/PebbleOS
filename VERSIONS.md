@@ -5,6 +5,24 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v61 (2026-09-03, BUILT, **AWAITING HW**; `build/sake-spike-v61-pump-addr-persist.pbz`): **fixes
+  a first-connect misclassification v59 introduced.** v59 persists the pump's identity under a new
+  `pumpaddr` settings key, but the only writer is `prv_store_pump_paired_cb`, reached through
+  `prv_set_pump_paired`, which returns early when the paired flag does not change. On a watch
+  already paired (any v58-or-earlier watch) the flag never changes, so the address never reached
+  flash. With `s_pump_addr_known` false and the pump-pairing window shut (it only opens while
+  unpaired), `is_pump` is false for the first connect of every boot: the pump gets routed into the
+  firmware stack as if it were the phone. The handshake then sets the address in RAM, so that
+  session's *disconnect* is recognised as the pump and swallowed -- leaving the stack with a
+  GAPLEConnection that never closes, the state `advert.c` warns about in the stale-handle comment.
+  Two changes: persist the address whenever the handshake learns one that flash does not already
+  hold (tracked by `s_pump_addr_persisted`, so it is one write per pump, not one per reconnect),
+  and, for a watch that paired before the key existed, recover the identity at init from the bond
+  store -- the pump is the only non-gateway BLE bond, so
+  `bt_persistent_storage_for_each_ble_pairing` skipping the ANCS bonding finds exactly it. Logs
+  `pump addr from bond` when that path runs, which is also how you tell it worked.
+  Carries v60 unchanged. Host tests 112/112, `./waf test` green, build clean. FLASH 95.39 %.
+
 - v60 (2026-09-03, BUILT, **AWAITING HW**; `build/sake-spike-v60-dual-link-merge.pbz`): **v59's dual
   link ported to asterix** (Pebble 2 Duo / nRF52840) and merged with the v56-v58 line. v59 was
   built on PT2 only; three things had to change for it to mean anything on this watch:
