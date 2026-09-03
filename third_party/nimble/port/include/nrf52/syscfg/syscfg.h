@@ -1273,7 +1273,13 @@
 #endif
 
 #ifndef MYNEWT_VAL_BLE_MAX_CONNECTIONS
+#ifdef CONFIG_MINIMED_SAKE_SPIKE
+/* MiniMed SAKE spike: DUAL mode holds the phone and the pump at the same time, so the host and
+ * the controller both need two connection slots. Mirrors the sf32lb52 port. */
+#define MYNEWT_VAL_BLE_MAX_CONNECTIONS (2)
+#else
 #define MYNEWT_VAL_BLE_MAX_CONNECTIONS (1)
+#endif
 #endif
 
 #ifndef MYNEWT_VAL_BLE_MAX_PERIODIC_SYNCS
