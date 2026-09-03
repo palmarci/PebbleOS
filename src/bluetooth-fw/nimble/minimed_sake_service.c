@@ -252,31 +252,55 @@ bool minimed_sake_addr_is_gateway(const uint8_t addr[6], uint8_t addr_type) {
 // every boot is classified as the phone -- addr_is_pump is false and the pairing window is shut
 // once paired -- which routes the pump into the fw stack and later swallows its disconnect.
 // The pump is the only non-gateway BLE bond (nimble_store stores it with is_gateway = false).
+#define PUMP_BOND_SEARCH_MAX 4
 typedef struct {
-  int found;
-  ble_addr_t addr;
+  int count;
+  BTBondingID ids[PUMP_BOND_SEARCH_MAX];
+  ble_addr_t addrs[PUMP_BOND_SEARCH_MAX];
 } PumpBondSearch;
 
+// Collect only. bt_persistent_storage_for_each_ble_pairing holds the bonding-DB mutex while it
+// runs this, and that mutex is not recursive, so anything that reads the bonding DB here -- the
+// is-gateway test included -- self-deadlocks. The same rule is spelled out at the other call site
+// in settings/bluetooth.c. Deadlocking here hangs the NimBLE host task during init, which times
+// out into PBL_CROAK and reboots the watch until it drops to PRF.
 static void prv_adopt_pump_bond_cb(BTDeviceInternal *device, SMIdentityResolvingKey *irk,
                                    const char *name, BTBondingID *id, void *context) {
   PumpBondSearch *search = (PumpBondSearch *)context;
-  if (bt_persistent_storage_is_ble_ancs_bonding(*id)) {
-    return;  // the phone
+  if (search->count >= PUMP_BOND_SEARCH_MAX) {
+    return;
   }
-  search->found++;
-  pebble_device_to_nimble_addr(device, &search->addr);
+  search->ids[search->count] = *id;
+  pebble_device_to_nimble_addr(device, &search->addrs[search->count]);
+  search->count++;
 }
 
-static void prv_adopt_pump_bond(void) {
+// Runs on KernelMain, never on the BT host task: this reads the bonding DB, and doing that from
+// inside minimed_sake_service_init hangs BT init (see the callback above). Scheduling it also
+// keeps the read off whatever init ordering the bonding DB itself needs. The pump cannot connect
+// before the user toggles to DUAL, so landing a beat later is soon enough.
+static void prv_adopt_pump_bond_cb2(void *unused) {
   PumpBondSearch search = {0};
   bt_persistent_storage_for_each_ble_pairing(prv_adopt_pump_bond_cb, &search);
-  if (search.found != 1) {
+  // The lock is free now, so the gateway test is safe.
+  int found = 0;
+  ble_addr_t addr = {0};
+  for (int i = 0; i < search.count; i++) {
+    if (bt_persistent_storage_is_ble_ancs_bonding(search.ids[i])) {
+      continue;  // the phone
+    }
+    found++;
+    addr = search.addrs[i];
+  }
+  if (found != 1) {
     return;  // no pump bond, or ambiguous -- leave it to the next handshake
   }
-  s_pump_id_addr = search.addr;
+  s_pump_id_addr = addr;
   s_pump_addr_known = true;
   minimed_sake_log("pump addr from bond");
 }
+
+static void prv_adopt_pump_bond(void) { launcher_task_add_callback(prv_adopt_pump_bond_cb2, NULL); }
 
 static void prv_rng(void *ud, uint8_t *out, size_t n) {
   (void)ud;

@@ -5,6 +5,25 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v62 (2026-09-03, BUILT, **AWAITING HW**; `build/sake-spike-v62-pump-addr-bondfix.pbz`): **fixes
+  the v61 boot hang that dropped the watch to PRF.** v61's `prv_adopt_pump_bond_cb` called
+  `bt_persistent_storage_is_ble_ancs_bonding` from inside
+  `bt_persistent_storage_for_each_ble_pairing`, which holds the bonding-DB mutex for the duration
+  of the callback. That mutex is not recursive, so the callback self-deadlocked -- on the NimBLE
+  host task, during `minimed_sake_service_init`, so `ble_hs_sched_start` never completed and
+  `init.c`'s `PBL_CROAK("NimBLE host start timed out")` rebooted the watch. Every boot, hence PRF.
+  **The trap was already documented in-tree** at `src/fw/apps/system/settings/bluetooth.c:157`, at
+  the only other call site, which collects inside the callback and filters after the iteration
+  returns; v62 does the same. It also only fires on a watch that has a stored pump bond, which is
+  why the build and the whole test suite were clean.
+  Two changes, not one: filter outside the lock, and run the whole lookup on **KernelMain** via
+  `launcher_task_add_callback` instead of inline in BT init -- the bonding DB has its own init
+  ordering and nothing about the spike needs that read to happen on the BT host task. The pump
+  cannot connect before the user toggles to DUAL, so a beat later is soon enough.
+  Lesson for the next one: a boot-path change that only misbehaves with real stored state (a pump
+  bond) is invisible to `waf test` and to the build. v60 is the fallback -- it predates this code.
+  Carries v60 and v61's persistence fix. Host tests 112/112, `./waf test` green. FLASH 95.39 %.
+
 - v61 (2026-09-03, BUILT, **AWAITING HW**; `build/sake-spike-v61-pump-addr-persist.pbz`): **fixes
   a first-connect misclassification v59 introduced.** v59 persists the pump's identity under a new
   `pumpaddr` settings key, but the only writer is `prv_store_pump_paired_cb`, reached through
