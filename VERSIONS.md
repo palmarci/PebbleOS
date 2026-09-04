@@ -5,6 +5,37 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v63 (2026-09-04, BUILT, **AWAITING HW**; `build/sake-spike-v63-dual-readvertise-on-connect.pbz`):
+  **fixes the pump failing to come back after a Bluetooth stack restart** — the overnight failure
+  mode, and a strong candidate for palmarci's "random disconnects".
+  `gap_le_advert_handle_connect_as_slave` marks `s_is_advertising = false` when a connection comes
+  up (the controller stops advertising on its own) and deliberately does *not* re-air, because in
+  stock, advertising and being connected are mutually exclusive and the LE client unschedules the
+  jobs anyway. Under DUAL that reasoning does not hold: the pump's `MMD` job is meant to stay up
+  while the phone is connected, so it silently goes off air and nothing brings it back until a
+  disconnect, a pump connect, or another stack restart forces a refresh. v63 re-airs from that
+  handler when `s_allow_advert_while_connected` is set.
+  Evidence, `../logs/watch/2026-09-04-g0-v62-dual-overnight.txt` — four restarts, and whether the
+  pump returned is decided purely by ordering:
+
+  | restart | `Scheduling ... MMD` | phone `LE Conn Compl` | pump back |
+  |---|---|---|---|
+  | 21:12 | 21:12:20 | already up since 21:10:15 | yes, 21:12:31 |
+  | 00:59 | 00:59:50 | 00:59:50, **after** | **no — 86 min** |
+  | 02:26 | 02:26:09, **after** | 02:26:09 | yes, 02:27:04 |
+  | 04:32 | 04:32:34 | 04:32:34, **after** | **no — 160 min** |
+
+  Scheduled after the phone is up, `gap_le_advert_schedule` airs it directly and the pump finds the
+  watch in about a minute. Scheduled before, the connect wipes it. 70 BG readings landed over 10 h
+  where ~120 were due.
+  Note the restarts are **not** BLE failures. Two are `service_stationary: Entering stationary` →
+  `Setting runlevel to 2`, stock power saving that takes Bluetooth down when the watch sits still
+  (~16 min total, and it releases on movement). The 02:26 and 04:27 ones have no stationary line
+  and are **still unexplained** — worth a look, but with v63 a restart should cost about a minute
+  of pump link instead of hours. The pump-liveness watchdog never fired and could not have: it
+  requires `minimed_sake_pump_connected()`, and the restart clears that handle.
+  Host tests 112/112, `./waf test` green. FLASH 95.40 %.
+
 - v62 (2026-09-03, **HW-VERIFIED 2026-09-03 — the dual link works on asterix**;
   `build/sake-spike-v62-pump-addr-bondfix.pbz`): **fixes the v61 boot hang that dropped the watch
   to PRF**, and is the first build with phone and pump connected at the same time on this watch.

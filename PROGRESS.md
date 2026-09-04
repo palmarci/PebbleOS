@@ -38,6 +38,11 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 - **End-to-end PROVEN on real HW (2026-07-21):** advertise as "Mobile PB" → pump connects → SAKE
   handshake → GATT-client CGM read → decrypt → continuous auto-updating BG in mmol/L, matching the
   pump's display exactly. Feasibility fully settled; the rest is productization.
+- **v63 BUILT 2026-09-04, awaiting HW: the pump now comes back after a BT stack restart.** The
+  advert scheduler stops advertising on connect and never re-airs, so under DUAL the pump's job
+  went off air whenever the phone connected after it was scheduled — twice overnight, costing 86
+  and 160 minutes of pump link. Re-air from `gap_le_advert_handle_connect_as_slave` when
+  advertise-while-connected is set. Details: VERSIONS.md v63 entry.
 - **DUAL LINK HW-VERIFIED 2026-09-03 (v62): phone and pump connected at once on asterix.** BG and
   IOB flow from the pump while the phone session stays up, so `pebble logs` / sideload no longer
   cost the pump link — the tooling unblock that motivated this whole item. Capture:
