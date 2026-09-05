@@ -48,6 +48,10 @@ void minimed_sake_spike_report(MinimedSakeStage stage);
 //! Safe from any task, including the BT host task.
 void minimed_sake_log(const char *msg);
 
+//! Like minimed_sake_log, but also writes the line to the durable flash log. Connectivity events
+//! only -- never anything on a per-poll or per-advert-rotation path.
+void minimed_sake_log_evt(const char *msg);
+
 //! Snapshot of the joined log text for the app to render. Points at a static buffer.
 const char *minimed_sake_get_log(void);
 

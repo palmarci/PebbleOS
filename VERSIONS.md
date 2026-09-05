@@ -5,6 +5,27 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v65 (2026-09-05, BUILT, **AWAITING HW**; `build/sake-spike-v65-durable-conn-logging.pbz`):
+  **puts the pump link's connectivity events in the flash log.** Everything about the pump side —
+  its connect classification (`conn PUMP m=D` / `conn phone m=D`), its disconnects
+  (`disc pump reason=`, `disc UNTRACKED`, `disc hdl=…`), whether its advert job was even created
+  (`adv job FE8x` / `pump adv job FAIL`), the mode transitions, the loopback session and the
+  per-connect `prm …` conn-params line — went only to `minimed_sake_log`'s 14-line on-watch ring.
+  A dropout is diagnosed hours later from `dump_flash_logs.py`, where none of it appeared. That is
+  what turned the v63/v64 bug into two nights and one wrong fix: `pump adv job FAIL` was being
+  logged the whole time and nobody could see it.
+  New `minimed_sake_log_evt()` writes the line to both the ring and `PBL_LOG_INFO`. Applied to the
+  28 connectivity call sites in `advert.c`, `minimed_sake_service.c`, `minimed_sake_sender.c` and
+  the mode transitions.
+  **Deliberately not applied** to the 62 call sites in `minimed_sake_read.c` (the per-poll path
+  already has its own `PBL_LOG`s, and duplicating them would roughly double the log for nothing),
+  nor to the three advert-rotation lines in `advert.c` — `adv DISABLE`, the `adv %02x…` payload
+  dump and `adv EN`. Those fire about once a second whenever two jobs are scheduled, because
+  `prv_perform_next_job` re-pushes the payload on every round-robin swap between `MMD` and `RCN`.
+  Promoting them would flood the ring log and shorten how far back a dump reaches.
+  Carries v64. Host tests 112/112, `./waf test` green,
+  `check_elf_log_strings` clean (the v57 hard-fault class). FLASH 95.40 %, LOG_STRINGS 26.57 %.
+
 - v64 (2026-09-05, BUILT, **AWAITING HW**; `build/sake-spike-v64-dual-rearm-after-gapinit.pbz`):
   **the actual fix for the pump not returning after a Bluetooth stack restart.** v63 was the wrong
   diagnosis and changed nothing on hardware — see the v63 entry.
