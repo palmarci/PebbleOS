@@ -619,15 +619,17 @@ int minimed_sake_service_init(void) {
 
   // Re-arm DUAL state after a Bluetooth stack restart that was triggered while in DUAL (the
   // pump-liveness watchdog's recovery, or a manual DUAL-keep restart). s_mode survives the
-  // restart (it is a static), but the loopback session, the pump advert job, and the
-  // advertise-while-connected flag were all torn down with the stack -- re-create them.
+  // restart (it is a static), but the loopback session and the driver's link state were torn down
+  // with the stack -- re-create them.
+  // The advert half of the re-arm is NOT done here. This runs inside bt_driver_start, and
+  // bluetooth_ctl.c calls gap_le_init() -- hence gap_le_advert_init() -- immediately afterwards,
+  // which clears s_jobs, s_current and s_allow_advert_while_connected. Anything scheduled here is
+  // discarded before it can ever air. minimed_sake_bt_started() does that part, after gap_le_init.
   if (minimed_sake_get_mode() == MinimedSakeModeDual) {
     minimed_sake_clear_link_state();
     minimed_sake_cache_gateway_addr();
     minimed_sake_apply_sm_config(minimed_sake_pump_pairing_window());
     minimed_sake_sender_set_mode(true);
-    gap_le_advert_set_allow_advert_while_connected(true);
-    minimed_sake_pump_advert_start();
   } else {
     // Boot mode is NORMAL: make sure the phone gets the stock strict config even though we compile
     // with the permissive legacy gates (SC_ONLY 0 / LEGACY 1) the pump needs.

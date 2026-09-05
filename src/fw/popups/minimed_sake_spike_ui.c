@@ -109,6 +109,21 @@ void minimed_sake_watchdog_retoggle(void) {
   bt_ctl_reset_bluetooth();
 }
 
+// Called by bluetooth_ctl.c once the whole Bluetooth stack is up. The advert half of the DUAL
+// re-arm has to happen here, not in minimed_sake_service_init: that one runs inside
+// bt_driver_start, and gap_le_init() -> gap_le_advert_init() runs right after it and resets
+// s_jobs, s_current and s_allow_advert_while_connected. A job scheduled any earlier is thrown
+// away -- gap_le_advert_schedule frees it outright while the module is deinitialised -- so after a
+// stack restart the pump had no advert at all and could never reconnect.
+void minimed_sake_bt_started(void) {
+  if (minimed_sake_get_mode() != MinimedSakeModeDual) {
+    return;
+  }
+  gap_le_advert_set_allow_advert_while_connected(true);
+  minimed_sake_pump_advert_start();
+  minimed_sake_log("BT up -> re-arm DUAL adv");
+}
+
 void minimed_sake_toggle_mode(void) {
   s_mode = (s_mode == MinimedSakeModeNormal) ? MinimedSakeModeDual : MinimedSakeModeNormal;
   if (s_mode == MinimedSakeModeDual) {
@@ -140,6 +155,7 @@ void minimed_sake_toggle_mode(void) {
 
 MinimedSakeMode minimed_sake_get_mode(void) { return MinimedSakeModeNormal; }
 void minimed_sake_toggle_mode(void) {}
+void minimed_sake_bt_started(void) {}
 void minimed_sake_spike_report(MinimedSakeStage stage) { (void)stage; }
 void minimed_sake_log(const char *msg) { (void)msg; }
 const char *minimed_sake_get_log(void) { return ""; }

@@ -5,8 +5,38 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
-- v63 (2026-09-04, BUILT, **AWAITING HW**; `build/sake-spike-v63-dual-readvertise-on-connect.pbz`):
-  **fixes the pump failing to come back after a Bluetooth stack restart** — the overnight failure
+- v64 (2026-09-05, BUILT, **AWAITING HW**; `build/sake-spike-v64-dual-rearm-after-gapinit.pbz`):
+  **the actual fix for the pump not returning after a Bluetooth stack restart.** v63 was the wrong
+  diagnosis and changed nothing on hardware — see the v63 entry.
+  `bluetooth_ctl.c` starts the stack as `bt_driver_start()` and then `gap_le_init()`.
+  `minimed_sake_service_init` runs inside the first, and re-armed DUAL there: allow-advert-while-
+  connected plus `gap_le_advert_schedule(MMD)`. `gap_le_init()` then calls `gap_le_advert_init()`,
+  which sets `s_jobs = NULL`, `s_current = NULL` and `s_allow_advert_while_connected = false`.
+  Worse, `gap_le_advert_deinit` had already set `s_gap_le_advert_is_initialized = false` on the way
+  down, so the `MMD` schedule during `bt_driver_start` took `gap_le_advert_schedule`'s else branch
+  and **freed the job outright**. After any stack restart the pump had no advert job and the flag
+  was off, so it could never reconnect — and v63's re-air-on-connect could never fire, because its
+  condition was false the whole time.
+  The `Scheduling advertising job: MMD` line is a **red herring**: `PBL_LOG_INFO` there runs before
+  the initialised-check, so it prints even when the job is discarded. Don't read it as proof the
+  job exists. `pump adv job FAIL` does prove the opposite, but only reaches the 14-line on-watch
+  ring, not the flash log.
+  v64 splits the advert half of the re-arm into `minimed_sake_bt_started()` and calls it from
+  `bluetooth_ctl.c` after `gap_le_init()`, `bt_local_addr_init()` and `bt_pairability_init()`.
+  A guarded three-line addition to a stock file, accepted against
+  [[pebbleos-upstream-isolation]] because the ordering constraint is the whole fix.
+  Evidence it was needed, `../logs/watch/2026-09-05-g0-v63-dual-overnight.txt`: 25 h uptime, two
+  stationary episodes (01:56, 05:47), both followed by `Scheduling advertising job: MMD` then the
+  phone's `LE Conn Compl`, and no pump afterwards — last BG 01:51:44, still dark at 08:34.
+  219 BG readings against ~215 due up to 01:51, then nothing for 6.7 h.
+  Host tests 112/112, `./waf test` green, stock (non-spike) build clean. FLASH 95.40 %.
+  Still worth doing regardless of this fix: **pump-side disconnects never reach the flash log** —
+  `disc pump reason=` and `pump adv job FAIL` go only to `minimed_sake_log`'s ring. Promoting a few
+  of those to `PBL_LOG` would have made this a five-minute diagnosis instead of two nights.
+
+- v63 (2026-09-04, **HW-TESTED 2026-09-05 — did NOT fix it**; superseded by v64;
+  `build/sake-spike-v63-dual-readvertise-on-connect.pbz`):
+  **attempted to fix the pump failing to come back after a Bluetooth stack restart** — the overnight failure
   mode, and a strong candidate for palmarci's "random disconnects".
   `gap_le_advert_handle_connect_as_slave` marks `s_is_advertising = false` when a connection comes
   up (the controller stops advertising on its own) and deliberately does *not* re-air, because in

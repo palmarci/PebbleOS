@@ -38,7 +38,12 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 - **End-to-end PROVEN on real HW (2026-07-21):** advertise as "Mobile PB" → pump connects → SAKE
   handshake → GATT-client CGM read → decrypt → continuous auto-updating BG in mmol/L, matching the
   pump's display exactly. Feasibility fully settled; the rest is productization.
-- **v63 BUILT 2026-09-04, awaiting HW: the pump now comes back after a BT stack restart.** The
+- **v64 BUILT 2026-09-05, awaiting HW: the real fix for the pump not returning after a BT restart.**
+  The DUAL re-arm ran inside `bt_driver_start`, but `gap_le_init()` runs right after and resets the
+  advert scheduler — the pump's advert job was freed before it could ever air. Moved to
+  `minimed_sake_bt_started()`, called from `bluetooth_ctl.c` after `gap_le_init()`. v63 was the
+  wrong diagnosis. Details: VERSIONS.md v64 entry.
+- **v63 (2026-09-04) did NOT fix the post-restart pump reconnect** — superseded by v64. The
   advert scheduler stops advertising on connect and never re-airs, so under DUAL the pump's job
   went off air whenever the phone connected after it was scheduled — twice overnight, costing 86
   and 160 minutes of pump link. Re-air from `gap_le_advert_handle_connect_as_slave` when
