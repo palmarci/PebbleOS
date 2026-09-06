@@ -47,7 +47,7 @@ files are listed there.
   Carries v64. Host tests 112/112, `./waf test` green,
   `check_elf_log_strings` clean (the v57 hard-fault class). FLASH 95.40 %, LOG_STRINGS 26.57 %.
 
-- v64 (2026-09-05, BUILT, **AWAITING HW**; `build/sake-spike-v64-dual-rearm-after-gapinit.pbz`):
+- v64 (2026-09-05, **HW-VERIFIED 2026-09-06**; `build/sake-spike-v64-dual-rearm-after-gapinit.pbz`):
   **the actual fix for the pump not returning after a Bluetooth stack restart.** v63 was the wrong
   diagnosis and changed nothing on hardware — see the v63 entry.
   `bluetooth_ctl.c` starts the stack as `bt_driver_start()` and then `gap_le_init()`.
@@ -72,6 +72,23 @@ files are listed there.
   phone's `LE Conn Compl`, and no pump afterwards — last BG 01:51:44, still dark at 08:34.
   219 BG readings against ~215 due up to 01:51, then nothing for 6.7 h.
   Host tests 112/112, `./waf test` green, stock (non-spike) build clean. FLASH 95.40 %.
+  **Verified on hardware 2026-09-06** by a deliberate 30-minute motionless test on v66 (which
+  carries v64), `../logs/watch/2026-09-06-g0-v66-stationary-test.txt`:
+
+      10:50:00  Entering stationary / Setting runlevel to 2
+      10:50:00  disc pump reason=0x16        (clean local teardown, not a 0x08 range timeout)
+      10:54:19  Exiting stationary / Setting runlevel to 4
+      10:54:19  adv job FE81 len22           the job now actually exists
+      10:54:19  BT up -> re-arm DUAL adv     v64's hook, after gap_le_init
+      10:54:23  conn PUMP m=D                pump back 4 s after wake
+      10:54:40  BG new 128 mg/dL             BG 21 s after wake
+
+  The ordering that used to be fatal — the pump advert scheduled before the phone's `LE Conn Compl`
+  in the same second — is present here and now works. Against 86 and 160 minutes on v62/v63.
+  Cosmetic leftover, deliberately not chased: `adv job FE81` is logged twice per restart. The first
+  is the doomed schedule still made from inside `bt_driver_start`, discarded moments later by
+  `gap_le_advert_init`; the second is v64's. Inert, but `minimed_sake_service_init` could skip the
+  advert start entirely if the duplicate ever confuses a reading.
   Still worth doing regardless of this fix: **pump-side disconnects never reach the flash log** —
   `disc pump reason=` and `pump adv job FAIL` go only to `minimed_sake_log`'s ring. Promoting a few
   of those to `PBL_LOG` would have made this a five-minute diagnosis instead of two nights.

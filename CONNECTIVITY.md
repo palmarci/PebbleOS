@@ -5,6 +5,26 @@ first-pair/reconnect advertising, bond storage and pruning, the phone-vs-pump sl
 the dual-connection work that would dissolve it. Pump *protocol* facts belong in
 `../Documentation/`; battery effects of the link are in `BATTERY.md`.
 
+## Stand-By Mode takes the pump link down
+
+Stock PebbleOS "Stand-By Mode" (`Settings -> System`, the `stationary` service) drops the watch to
+`RunLevel_Stationary` after **30 minutes without motion**, which stops Bluetooth outright: the phone
+link and the pump link both go, with the pump's disconnect logged as a clean `reason=0x16`. It comes
+back on any movement, and since v64 the pump reconnects about 4 s later.
+
+For a glucose watch this is the wrong trade — the display is most useful exactly when you are lying
+still — so **Stand-By Mode is off** (2026-09-06). Notes for anyone reconsidering it:
+
+- It is a plain user setting, no firmware change needed. `stationary_set_enabled()`.
+- It never engages while charging (`service.c`: `!battery_is_usb_connected()`).
+- The countdown is a once-per-minute accelerometer position sample, not a vibration detector, so a
+  watch sitting on a desk next to someone typing still goes stationary. The hypersensitive shake
+  handler is only subscribed *after* it sleeps, which is what wakes it.
+- It was engaging for only ~16 min out of each 20 h night, so the power it saved was small. If the
+  drain without it turns out to matter, the middle option is teaching `RunLevel_Stationary` to keep
+  Bluetooth alive so the display and sensors sleep but the pump link survives — a stock-file change
+  to the runlevel table, hence not done first.
+
 ## Gotchas
 
 - Single BLE connection (`BLE_MAX_CONNECTIONS 1`): phone or pump, never both — toggle between
