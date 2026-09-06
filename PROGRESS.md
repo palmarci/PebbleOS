@@ -38,6 +38,9 @@ how to build and test, the code map, and what is left. Topic detail lives in its
 - **End-to-end PROVEN on real HW (2026-07-21):** advertise as "Mobile PB" → pump connects → SAKE
   handshake → GATT-client CGM read → decrypt → continuous auto-updating BG in mmol/L, matching the
   pump's display exactly. Feasibility fully settled; the rest is productization.
+- **v66 BUILT 2026-09-06, awaiting HW: watch fetches BG as soon as the sensor recovers.** It used
+  to wait for the pump's "new CGM" push bit or the 6-minute fallback, so a pump that resumed on an
+  existing record left the watch blank for minutes. Details: VERSIONS.md v66 entry.
 - **v65 BUILT 2026-09-05, awaiting HW: pump connectivity events now reach the flash log.** They
   were ring-only, which is why the v63/v64 bug took two nights — `pump adv job FAIL` was being
   logged all along and was invisible to `dump_flash_logs.py`. The per-poll read path and the

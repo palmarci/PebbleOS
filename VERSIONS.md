@@ -5,6 +5,27 @@ archive — you rarely need it in context. Current state is in `PROGRESS.md`; th
 files are listed there.
 
 
+- v66 (2026-09-06, BUILT, **AWAITING HW**;
+  `build/sake-spike-v66-cgm-fetch-on-sensor-recovery.pbz`): **fetch a CGM record as soon as the
+  pump has glucose again**, instead of waiting for the pump to volunteer one.
+  Reported symptom: after a sensor dropout the pump shows a number again but the watch stays on
+  `---` for minutes. The watch only asks for a CGM record when the 0x101 push sets
+  `MINIMED_IDD_FLAG_NEW_CGM` (`minimed_sake_read.c:501`) or when the fallback timer fires, which
+  in push mode is `FALLBACK_AFTER_SECS` = **6 minutes**. `bg_invalid` was used only to blank the
+  display; nothing acted on its 1 -> 0 transition. So when the pump resumes on a record that is
+  not new to it, no push bit is set and the watch waits out the fallback.
+  `minimed_status` now latches that transition (`minimed_status_take_bg_became_valid`, consume-once)
+  and the status-read completion issues `PEND_CGM` on it, logging `BG valid again -> fetch CGM`.
+  This does not beat the pump's 5-minute CGM cadence when there genuinely is no newer reading; it
+  removes the case where one exists and the watch sits on it.
+  Measurement note for the next round: the delivery lag computed from a record's own `offset`
+  field is **not** the quantity to check here — across the 236 readings in
+  `../logs/watch/2026-09-06-g0-v65-dual-overnight.txt` it is flat (p50 -16 s, p95 -6 s, 219/236
+  within 5 s of the median), because it cannot see a reading the watch never asked for. Confirm
+  this fix against wall-clock: pump shows a number at X, watch at Y.
+  Host tests 118/118 (six new, and the latch was broken on purpose once to confirm they fail),
+  `./waf test` green, `check_elf_log_strings` clean. FLASH 95.41 %.
+
 - v65 (2026-09-05, BUILT, **AWAITING HW**; `build/sake-spike-v65-durable-conn-logging.pbz`):
   **puts the pump link's connectivity events in the flash log.** Everything about the pump side —
   its connect classification (`conn PUMP m=D` / `conn phone m=D`), its disconnects
