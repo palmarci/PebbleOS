@@ -254,12 +254,16 @@ New files (all spike-only via wscript/ifdef):
   silenced raises skipped).
 - `minimed_sake_sender.c` — the **watchface local-sender**: loopback CommSession (QEMU-transport
   pattern) opened in SPIKE mode only (would compete with the real phone session in NORMAL);
-  injects `[PP hdr 0x0030][CMD_PUSH][watchface UUID][dict: key 10 ts, key 11 BG "N.N", key 14 IOB
-  "N.N"]` via `comm_session_receive_router_write` on KernelMain under `bt_lock`. `send_bg` and
+  injects `[PP hdr 0x0030][CMD_PUSH][target UUID][dict: announced keys only]` via
+  `comm_session_receive_router_write` on KernelMain under `bt_lock`. `send_bg` and
   `send_iob` are separate setters (BG/IOB arrive from different reads); `send_iob` deliberately
-  does NOT advance the BG timestamp. `send_next` drains the watchface's outbox: ready ping
-  (CMD_PUSH) → ACK + immediate push; its ACKs of our pushes are swallowed (loop guard). Protocol:
-  `pebble-glucose-protocol/PROTOCOL.md`.
+  does NOT advance the BG timestamp. `send_next` drains the watchface's outbox: an announcement
+  → ACK + immediate push, anything else → NACK + blacklist; its ACKs of our pushes are swallowed
+  (loop guard). The target UUID and the key set are learned from the announcement, not hardcoded
+  (item 10 under Remaining work). Protocol: `pebble-glucose-protocol/PROTOCOL.md`.
+- `minimed_glucose_announce.{c,h}` — pure parser for the capability announcement, which doubles as
+  the "is this watchface one of ours?" test. Host-tested (section 9).
+- `pebble_glucose_protocol.h` — verbatim copy of the spec's header (keys + capability bits).
 - `src/fw/popups/minimed_sake_spike_ui.{c,h}` — spike core: log ring buffer, mode flag, stage
   reports; declares the app↔BT-layer seam (`force_readvertise`, `pump_paired`, `forget_pump`,
   `sender_set_mode`).
@@ -444,6 +448,81 @@ and the phone-bond loop are in [`CONNECTIVITY.md`](CONNECTIVITY.md).
    advertised name bytes (load-bearing, see the v34/v35 lesson).
 8. ✅ **Full phone+pump bond coexistence — DONE, HW-VERIFIED 2026-07-26 (v36).** A flash now costs
    zero pairings. Detail in [`CONNECTIVITY.md`](CONNECTIVITY.md).
+
+10. **Glucose protocol: honour the announcement — DONE, v68 awaiting HW.** The sender used to push
+   to one hardcoded watchface UUID and ignore the capability announcement entirely, so installing
+   any other glucose watchface broke the link. It now claims the *foreground watchface's* UUID
+   (`prv_claimed_uuid`, gated on `ProcessTypeWatchface`), confirms it with
+   `minimed_glucose_parse_announce`, and sends only the announced fields. A watchface that fails
+   the parse is NACKed and blacklisted, so it gets out of the way after a single message. The
+   protocol header is now a copy of the spec's (`pebble_glucose_protocol.h`) instead of ad-hoc key
+   defines.
+
+   **The announcement-only regression, found and fixed (v67 → v68).** v67 sent nothing until an
+   announcement arrived, and on HW nothing ever did: log
+   `../logs/watch/2026-09-08-g0-v67-wf-caps-no-ready-ping.txt` shows the pump reading fine (BG 129
+   mg/dL) with nowhere to send it. The watchface only calls `send_ready()` at init and from
+   `pebble_app_connection_handler` (`../pebble-glucose-watchface/src/c/main.c:792` and `:612`), so
+   on a boot that starts in NORMAL the announcement goes out ~3 min before `mode -> DUAL` creates
+   the loopback, routes to the phone's Hybrid session, and is never repeated. Relaunching the
+   watchface fixes it (HW-confirmed both ways). **Fix taken (C):** with no target yet,
+   `prv_push_bg_cb` sends every field it has to the foreground watchface using the same claim rule,
+   and the first announcement narrows it permanently. A watchface that does not speak the protocol
+   ignores keys it doesn't know, and in practice anyone running this firmware has a glucose
+   watchface installed. Fixed alongside: the negative cache was cleared on *any* announcement, so
+   alternating watchfaces re-NACKed a known non-match on every switch (returning to a watchface
+   relaunches it — there is one app slot); it now clears only for the matching UUID.
+
+   **The (E) alternative, and why the v19 objection does not apply to it.** v19 backed out
+   `PEBBLE_BT_CONNECTION_EVENT`, which drives the system connection banner
+   (`settings/bluetooth.c:225`). The watchface's `bluetooth_callback` is a different path, hanging
+   off `PEBBLE_COMM_SESSION_EVENT` (`connection_service.c:28-39`) — and that event **already
+   fires** when the loopback opens: `comm_session_open` emits it (`session.c:221`) with
+   `is_system = (destination != TransportDestinationApp)`. Ours is App-destination (deliberately,
+   so it doesn't evict the phone session), so `is_system` is false and it routes to
+   `pebblekit_connection_handler`, which the watchface doesn't subscribe. The two real options were
+   **E1**, emit an extra event with `is_system = true` — rejected, since that event also drives
+   `debounced_connection_service`, `put_bytes`, and an `app_run_state_send_update` to the phone
+   (`event_loop.c:516-527`), and in DUAL there is a real phone session to confuse; and **E2**, have
+   the watchface subscribe `pebblekit_connection_handler` too — one line, zero firmware risk, worth
+   doing in Morten's own watchface so the announcement arrives promptly on a mode toggle, but not a
+   substitute for C, which is what makes an arbitrary third-party watchface work.
+
+   **v68 on HW (2026-09-08, log `../logs/watch/2026-09-08-g0-v68-wf-caps-fallback-ready-ping-ok.txt`):
+   works — `mode -> DUAL` 08:34:15, `wf sender up`, `wf ready ping` 08:34:17, BG 100 mg/dL at
+   08:34:43. Note what that does and does not prove: the *announcement* path is verified, the
+   fallback never fired. Mode is NORMAL on boot and the only way into DUAL is the spike app, so
+   every entry into DUAL is followed by exiting to the watchface, which relaunches it and
+   re-announces (one app slot). The fallback is therefore near-dead code in normal use — kept as
+   insurance for a watchface that doesn't announce at init, and for any future path that enters
+   DUAL without leaving the watchface (persisted mode across reboot, a button shortcut). It also
+   explains why v67 looked broken: the log dump happened while still in the app, before the
+   relaunch that would have fixed it.
+
+   **Still unsent:** DELTA_STRING (12), TREND_ARROW (13), SENDER_BATTERY (16), GRAPH_HIGH_LINE
+   (31), GRAPH_LOW_LINE (32). Delta and trend have no pump source — the pump gives neither, so both
+   would have to be derived from `MinimedGraph` the way the bridge does it (2-point extrapolation,
+   see the trend-arrow-soak note). `GRAPH_HOURS` currently only switches the graph on and off; it
+   does not resize the fixed 2.5 h buffer.
+
+11. **Three things the protocol spec itself needs** (`../pebble-glucose-protocol/`, propagate to all
+   three implementations — watchface, bridge, PebbleOS — and reflash both sides together):
+   - **A magic number.** Identifying a glucose watchface currently leans on value constraints
+     (version == 1, capability word non-zero with no undefined bits), because keys 0 and 1 are the
+     most likely keys for any hand-rolled watchface to use. The SDK auto-assigns declared
+     `messageKeys` from 10000 (`sdk/waftools/process_message_keys.py:95`), so the collision
+     population is only watchfaces using raw low keys — but a MAGIC value in a reserved key (3-9)
+     would make the test exact instead of probabilistic.
+   - **Warn senders that `pebble_app_connection_handler` does not fire for them.** An on-watch or
+     otherwise App-destination sender appears as a PebbleKit-class connection, so a watchface
+     subscribing only `pebble_app_connection_handler` (the obvious choice, and what the reference
+     watchface does) never gets its reconnect trigger. Watchfaces should subscribe both handlers;
+     senders should not assume the announcement gets re-sent on session open. See item 10.
+   - **Say how much margin a sender should send past `GRAPH_HOURS`.** The key says what the
+     watchface *plots*, not what the sender should *send*. A sender that sends exactly N hours
+     leaves the graph's left edge bare between pushes, since the oldest point ages out and there
+     is no earlier point to draw the entering segment from. This is why `MINIMED_GRAPH_WINDOW_SECS`
+     is 2.5 h for a 2 h window. Every sender otherwise rediscovers this independently.
 
 ## References
 
