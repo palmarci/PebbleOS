@@ -45,12 +45,22 @@ for arg in "$@"; do
 done
 [ -n "$desc" ] || { echo "usage: $0 <desc> [--pt2] [--configure] [--no-push]" >&2; exit 2; }
 
+# Next version = 1 + the highest spike version recorded in the version logs (VERSIONS.md /
+# PROGRESS.md), falling back to the local build artifacts. The logs are the authoritative lineage
+# shared with Morten, so a PT2 build continues the same counter instead of restarting at 1.
+log_ver=$( { grep -hoE '^[-*] v[0-9]+|#\*\* v[0-9]+|\*\*v[0-9]+' VERSIONS.md PROGRESS.md 2>/dev/null
+            grep -hoE 'v[0-9]{1,}' VERSIONS.md PROGRESS.md 2>/dev/null; } \
+  | grep -oE 'v[0-9]{1,}' | tr -d v | sort -n | tail -1 )
+local_ver=$(ls build/sake-spike-v*.pbz 2>/dev/null \
+  | sed -n 's#.*/sake-spike-v\([0-9]\{1,\}\)-.*#\1#p' | sort -n | tail -1)
+next_ver=$(( $( [ "${log_ver:-0}" -gt "${local_ver:-0}" ] && echo "$log_ver" || echo "${local_ver:-0}" ) + 1 ))
+
 if [ "$profile" = obelix ]; then
   IMAGE=ghcr.io/coredevices/pebbleos-docker:v6  # official CI image, not the local commit
   BOARD=obelix@pvt                              # PT2 / Pebble Time 2 (SiFli), production revision
   DOCKER_USER=()                                # the CI image needs root to pip install
   PIP_CMD='pip install -U pip >/dev/null 2>&1; pip install -r requirements.txt >/dev/null 2>&1;'
-  CORE_CFG="-DCONFIG_RELEASE=y -DCONFIG_MINIMED_SAKE_SPIKE=y"
+  CORE_CFG="-DCONFIG_RELEASE=y -DCONFIG_MINIMED_SAKE_SPIKE=y -DCONFIG_SPIKE_VERSION=v$next_ver"
   SLOTS=(0 1)
   NEED_TAG=1
   VERIFY_BAND=1
@@ -82,10 +92,6 @@ if [ -d build/c4che ] && ! grep -q "BOARD = '${BOARD%@*}'" build/c4che/_cache.py
   do_configure=1
 fi
 [ -d build/c4che ] || do_configure=1
-
-# Next version = 1 + (max N across build/sake-spike-vN-*.pbz) (numeric, not lexical).
-next_ver=$(( $(ls build/sake-spike-v*.pbz 2>/dev/null \
-  | sed -n 's#.*/sake-spike-v\([0-9]\{1,\}\)-.*#\1#p' | sort -n | tail -1 | grep -E '^[0-9]+$' || echo 0) + 1 ))
 
 # Build one image. With an argument it is a slot number (obelix); without, the board's single slot.
 build_slot() {
@@ -153,6 +159,16 @@ else
     outs+=("$out")
   done
 fi
+
+# Archive the linked ELF for each build. The firmware ELF is overwritten by the next build, so a
+# later coredump cannot be resolved against it (the v13 crash debug dead-ended exactly here).
+# Keep a per-build copy with full debug info for later readcore.py/addr2line analysis.
+mkdir -p build/elfs
+for slot in "${SLOTS[@]:-''}"; do
+  elf="build/elfs/sake-spike-v${next_ver}-${desc}${slot:+_slot${slot}}.elf"
+  cp build/pebbleos.elf "$elf"
+  echo ">> archived: $elf"
+done
 
 # Keep this build's loghash dictionary next to the .pbz. PBL_LOG lines are stored hashed and the
 # hashes change between builds, so without the matching dict tools/dump_flash_logs.py cannot read

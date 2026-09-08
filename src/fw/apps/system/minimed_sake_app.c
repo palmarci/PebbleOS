@@ -44,6 +44,15 @@ static void prv_refresh(MinimedSakeAppData *data) {
                          ? (minimed_sake_pump_paired() ? "MODE: DUAL (FE81)" : "MODE: DUAL (FE82)")
                          : "MODE: NORMAL";
 
+  // Version label stamped by spike-build.sh (-DCONFIG_SPIKE_VERSION=vN), so a flashed image can
+  // be identified on the watch itself. Empty when built without the spike build script.
+#ifdef CONFIG_SPIKE_VERSION
+  const char *ver = CONFIG_SPIKE_VERSION;
+#else
+  const char *ver = "";
+#endif
+  const bool has_ver = (ver[0] != '\0');
+
   // Bond inventory: gw = phone bonds, pmp = pump (non-gateway) bonds, del = non-gateway bonds
   // deleted since boot. "FE81" above with pmp0 is the FE81/FE82 mismatch; pmp0 with del1 means
   // something pruned the pump bond; pmp0 with del0 means it was never stored.
@@ -54,7 +63,8 @@ static void prv_refresh(MinimedSakeAppData *data) {
   }
   data->bond_refresh_countdown--;
 
-  snprintf(data->buf, sizeof(data->buf), "%s\nbond gw%u pmp%u del%u\n%s", mode, data->bond_gateway,
+  snprintf(data->buf, sizeof(data->buf), "%s%s%s\nbond gw%u pmp%u del%u\n%s",
+           has_ver ? ver : "", has_ver ? " " : "", mode, data->bond_gateway,
            data->bond_non_gateway, data->bond_deleted, minimed_sake_get_log());
   text_layer_set_text(&data->text, data->buf);
 }
