@@ -13,6 +13,7 @@
 #include "nimble/nimble_port.h"
 
 #include "drivers/rtc.h"
+#include "kernel/kernel_heap.h"
 #include "minimed_annunciation.h"
 #include "minimed_idd_flags.h"
 #include "minimed_iob.h"
@@ -1082,6 +1083,14 @@ static void prv_poll_timer_cb(struct ble_npl_event *ev) {
       snprintf(line, sizeof(line), "lnk %u GONE", s_conn);
       minimed_sake_log(line);
     }
+  }
+  // KernelMain heap watch: the OOM crash (kernel heap draining to ~2.7 KB, 2026-09-09) was only
+  // visible after the fact. Report free/max-free once a minute so a slow leak is visible in the
+  // flash log before it kills the watch.
+  {
+    unsigned int used = 0, free_bytes = 0, max_free = 0;
+    heap_calc_totals(kernel_heap_get(), &used, &free_bytes, &max_free);
+    PBL_LOG_INFO("SAKE: heap free=%u max_free=%u", free_bytes, max_free);
   }
   prv_request(prv_full_poll_mask());
   const uint32_t secs = s_push_mode ? FALLBACK_AFTER_SECS : POLL_INTERVAL_SECS;
